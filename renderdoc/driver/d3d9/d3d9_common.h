@@ -24,6 +24,8 @@
 
 #pragma once
 
+#define INITGUID
+
 #include "api/replay/rdcstr.h"
 #include "api/replay/resourceid.h"
 #include "common/common.h"
@@ -121,3 +123,44 @@ DECLARE_REFLECTION_ENUM(D3DDEVTYPE);
 DECLARE_REFLECTION_ENUM(D3DLIGHTTYPE);
 DECLARE_REFLECTION_ENUM(D3DTEXTUREOP);
 DECLARE_REFLECTION_ENUM(D3DRESOURCETYPE);
+
+// TypeName specialisations and DoSerialise forward declarations for DWORD
+// (unsigned long) and LONG (long).  MSVC treats these as distinct types from
+// uint32_t / int32_t.
+template <>
+inline rdcliteral TypeName<unsigned long>()
+{
+  return "DWORD"_lit;
+}
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, unsigned long &el);
+
+template <>
+inline rdcliteral TypeName<long>()
+{
+  return "LONG"_lit;
+}
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, long &el);
+
+// Reflection declarations for Windows structs used by D3D9 serialisation
+DECLARE_REFLECTION_STRUCT(RECT);
+DECLARE_REFLECTION_STRUCT(POINT);
+
+// Reflection declarations for D3D9 structs used in serialisation.
+// These provide TypeName<> specialisations needed by the serialiser.
+DECLARE_REFLECTION_STRUCT(D3DCOLORVALUE);
+DECLARE_REFLECTION_STRUCT(D3DVECTOR);
+DECLARE_REFLECTION_STRUCT(D3DRECT);
+DECLARE_REFLECTION_STRUCT(D3DMATRIX);
+DECLARE_REFLECTION_STRUCT(D3DVIEWPORT9);
+DECLARE_REFLECTION_STRUCT(D3DLIGHT9);
+DECLARE_REFLECTION_STRUCT(D3DMATERIAL9);
+DECLARE_REFLECTION_STRUCT(D3DVERTEXELEMENT9);
+DECLARE_REFLECTION_STRUCT(D3DPRESENT_PARAMETERS);
+DECLARE_REFLECTION_STRUCT(D3DSURFACE_DESC);
+DECLARE_REFLECTION_STRUCT(D3DVERTEXBUFFER_DESC);
+DECLARE_REFLECTION_STRUCT(D3DINDEXBUFFER_DESC);
+DECLARE_REFLECTION_STRUCT(D3DVSHADERCAPS2_0);
+DECLARE_REFLECTION_STRUCT(D3DPSHADERCAPS2_0);
+DECLARE_REFLECTION_STRUCT(D3DCAPS9);

@@ -79,7 +79,59 @@ SERIALISE_D3D9_INTERFACE(IDirect3DQuery9);
 SERIALISE_D3D9_INTERFACE(IDirect3DBaseTexture9);
 
 /////////////////////////////////////////////////////////////////////////////
-// Struct serialisation
+// Primitive type serialisation for DWORD (unsigned long) and LONG (long).
+// On MSVC, unsigned long and uint32_t are distinct types even though both
+// are 32 bits.  Many D3D9 structs use DWORD/LONG fields, so we provide
+// explicit DoSerialise overloads that forward to the uint32_t / int32_t
+// serialiser.
+/////////////////////////////////////////////////////////////////////////////
+
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, unsigned long &el)
+{
+  uint32_t v = (uint32_t)el;
+  ser.SerialiseValue(SDBasic::UnsignedInteger, 4, v);
+  el = (unsigned long)v;
+}
+
+INSTANTIATE_SERIALISE_TYPE(unsigned long);
+
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, long &el)
+{
+  int32_t v = (int32_t)el;
+  ser.SerialiseValue(SDBasic::SignedInteger, 4, v);
+  el = (long)v;
+}
+
+INSTANTIATE_SERIALISE_TYPE(long);
+
+/////////////////////////////////////////////////////////////////////////////
+// Windows struct serialisation (RECT, POINT)
+/////////////////////////////////////////////////////////////////////////////
+
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, RECT &el)
+{
+  SERIALISE_MEMBER_TYPED(int32_t, left);
+  SERIALISE_MEMBER_TYPED(int32_t, top);
+  SERIALISE_MEMBER_TYPED(int32_t, right);
+  SERIALISE_MEMBER_TYPED(int32_t, bottom);
+}
+
+INSTANTIATE_SERIALISE_TYPE(RECT);
+
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, POINT &el)
+{
+  SERIALISE_MEMBER_TYPED(int32_t, x);
+  SERIALISE_MEMBER_TYPED(int32_t, y);
+}
+
+INSTANTIATE_SERIALISE_TYPE(POINT);
+
+/////////////////////////////////////////////////////////////////////////////
+// D3D9 struct serialisation
 /////////////////////////////////////////////////////////////////////////////
 
 template <class SerialiserType>
@@ -376,3 +428,17 @@ void DoSerialise(SerialiserType &ser, D3DCAPS9 &el)
 }
 
 INSTANTIATE_SERIALISE_TYPE(D3DCAPS9);
+
+/////////////////////////////////////////////////////////////////////////////
+// D3D9InitParams serialisation
+/////////////////////////////////////////////////////////////////////////////
+
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9InitParams &el)
+{
+  SERIALISE_MEMBER(DeviceType);
+  SERIALISE_MEMBER(BehaviorFlags);
+  SERIALISE_MEMBER(PresentationParameters);
+}
+
+INSTANTIATE_SERIALISE_TYPE(D3D9InitParams);
