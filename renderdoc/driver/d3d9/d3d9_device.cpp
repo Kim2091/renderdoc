@@ -26,6 +26,8 @@
 #include "core/core.h"
 #include "d3d9_buffers.h"
 #include "d3d9_resources.h"
+#include "d3d9_shaders.h"
+#include "d3d9_stateblock.h"
 #include "serialise/rdcfile.h"
 #include "strings/string_utils.h"
 
@@ -1321,22 +1323,100 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetRenderState(D3DRENDERSTATE
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateStateBlock(D3DSTATEBLOCKTYPE Type,
                                                                      IDirect3DStateBlock9 **ppSB)
 {
-  // TODO: wrap state block
-  return m_pDevice->CreateStateBlock(Type, ppSB);
+  IDirect3DStateBlock9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreateStateBlock(Type, &real));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DStateBlock9 *wrappedSB = new WrappedIDirect3DStateBlock9(real, this, Type);
+    IDirect3DStateBlock9 *wrappedPtr = wrappedSB;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedSB->GetResourceID());
+      record->resType = D3D9ResourceType::StateBlock;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateStateBlock);
+        Serialise_CreateStateBlock(ser, Type, &wrappedPtr);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppSB = wrappedSB;
+  }
+  else
+  {
+    if(ppSB)
+      *ppSB = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::BeginStateBlock()
 {
-  m_StateBlockRecording = true;
-  // TODO: serialise
-  return m_pDevice->BeginStateBlock();
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->BeginStateBlock());
+
+  if(SUCCEEDED(ret))
+  {
+    m_StateBlockRecording = true;
+
+    if(IsActiveCapturing(m_State))
+    {
+      USE_SCRATCH_SERIALISER();
+      SCOPED_SERIALISE_CHUNK(D3D9Chunk::BeginStateBlock);
+      Serialise_BeginStateBlock(ser);
+      m_DeviceRecord->AddChunk(scope.Get());
+    }
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::EndStateBlock(IDirect3DStateBlock9 **ppSB)
 {
+  IDirect3DStateBlock9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->EndStateBlock(&real));
+
   m_StateBlockRecording = false;
-  // TODO: wrap state block, serialise
-  return m_pDevice->EndStateBlock(ppSB);
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DStateBlock9 *wrappedSB =
+        new WrappedIDirect3DStateBlock9(real, this, (D3DSTATEBLOCKTYPE)0);
+    IDirect3DStateBlock9 *wrappedPtr = wrappedSB;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedSB->GetResourceID());
+      record->resType = D3D9ResourceType::StateBlock;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::EndStateBlock);
+        Serialise_EndStateBlock(ser, &wrappedPtr);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppSB = wrappedSB;
+  }
+  else
+  {
+    if(ppSB)
+      *ppSB = NULL;
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1624,7 +1704,16 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::ProcessVertices(
       realVB = wrappedVB->GetReal();
   }
 
-  return m_pDevice->ProcessVertices(SrcStartIndex, DestIndex, VertexCount, realVB, pVertexDecl,
+  IDirect3DVertexDeclaration9 *realDecl = pVertexDecl;
+  if(pVertexDecl)
+  {
+    WrappedIDirect3DVertexDeclaration9 *wrappedDecl =
+        dynamic_cast<WrappedIDirect3DVertexDeclaration9 *>(pVertexDecl);
+    if(wrappedDecl)
+      realDecl = wrappedDecl->GetReal();
+  }
+
+  return m_pDevice->ProcessVertices(SrcStartIndex, DestIndex, VertexCount, realVB, realDecl,
                                     Flags);
 }
 
@@ -1634,15 +1723,58 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::ProcessVertices(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateVertexDeclaration(
     CONST D3DVERTEXELEMENT9 *pVertexElements, IDirect3DVertexDeclaration9 **ppDecl)
 {
-  // TODO: wrap vertex declaration
-  return m_pDevice->CreateVertexDeclaration(pVertexElements, ppDecl);
+  IDirect3DVertexDeclaration9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreateVertexDeclaration(pVertexElements, &real));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DVertexDeclaration9 *wrappedDecl =
+        new WrappedIDirect3DVertexDeclaration9(real, this);
+    IDirect3DVertexDeclaration9 *wrappedPtr = wrappedDecl;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedDecl->GetResourceID());
+      record->resType = D3D9ResourceType::VertexDeclaration;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateVertexDeclaration);
+        Serialise_CreateVertexDeclaration(ser, pVertexElements, &wrappedPtr);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppDecl = wrappedDecl;
+  }
+  else
+  {
+    if(ppDecl)
+      *ppDecl = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexDeclaration(
     IDirect3DVertexDeclaration9 *pDecl)
 {
+  IDirect3DVertexDeclaration9 *realDecl = NULL;
+  if(pDecl)
+  {
+    WrappedIDirect3DVertexDeclaration9 *wrappedDecl =
+        dynamic_cast<WrappedIDirect3DVertexDeclaration9 *>(pDecl);
+    if(wrappedDecl)
+      realDecl = wrappedDecl->GetReal();
+    else
+      realDecl = pDecl;
+  }
+
   HRESULT ret;
-  SERIALISE_TIME_CALL(ret = m_pDevice->SetVertexDeclaration(pDecl));
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetVertexDeclaration(realDecl));
 
   if(IsActiveCapturing(m_State))
   {
@@ -1658,8 +1790,32 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexDeclaration(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexDeclaration(
     IDirect3DVertexDeclaration9 **ppDecl)
 {
-  // TODO: return wrapped declaration
-  return m_pDevice->GetVertexDeclaration(ppDecl);
+  if(ppDecl == NULL)
+    return D3DERR_INVALIDCALL;
+
+  IDirect3DVertexDeclaration9 *real = NULL;
+  HRESULT ret = m_pDevice->GetVertexDeclaration(&real);
+
+  if(SUCCEEDED(ret) && real)
+  {
+    IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
+    if(wrapper)
+    {
+      *ppDecl = (IDirect3DVertexDeclaration9 *)wrapper;
+      (*ppDecl)->AddRef();
+    }
+    else
+    {
+      *ppDecl = real;
+    }
+    real->Release();
+  }
+  else
+  {
+    *ppDecl = NULL;
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1699,15 +1855,57 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetFVF(DWORD *pFVF)
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateVertexShader(
     CONST DWORD *pFunction, IDirect3DVertexShader9 **ppShader)
 {
-  // TODO: wrap shader
-  return m_pDevice->CreateVertexShader(pFunction, ppShader);
+  IDirect3DVertexShader9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreateVertexShader(pFunction, &real));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DVertexShader9 *wrappedVS = new WrappedIDirect3DVertexShader9(real, this);
+    IDirect3DVertexShader9 *wrappedPtr = wrappedVS;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedVS->GetResourceID());
+      record->resType = D3D9ResourceType::VertexShader;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateVertexShader);
+        Serialise_CreateVertexShader(ser, pFunction, &wrappedPtr);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppShader = wrappedVS;
+  }
+  else
+  {
+    if(ppShader)
+      *ppShader = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexShader(
     IDirect3DVertexShader9 *pShader)
 {
+  IDirect3DVertexShader9 *realShader = NULL;
+  if(pShader)
+  {
+    WrappedIDirect3DVertexShader9 *wrappedVS =
+        dynamic_cast<WrappedIDirect3DVertexShader9 *>(pShader);
+    if(wrappedVS)
+      realShader = wrappedVS->GetReal();
+    else
+      realShader = pShader;
+  }
+
   HRESULT ret;
-  SERIALISE_TIME_CALL(ret = m_pDevice->SetVertexShader(pShader));
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetVertexShader(realShader));
 
   if(IsActiveCapturing(m_State))
   {
@@ -1723,8 +1921,32 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexShader(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShader(
     IDirect3DVertexShader9 **ppShader)
 {
-  // TODO: return wrapped shader
-  return m_pDevice->GetVertexShader(ppShader);
+  if(ppShader == NULL)
+    return D3DERR_INVALIDCALL;
+
+  IDirect3DVertexShader9 *real = NULL;
+  HRESULT ret = m_pDevice->GetVertexShader(&real);
+
+  if(SUCCEEDED(ret) && real)
+  {
+    IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
+    if(wrapper)
+    {
+      *ppShader = (IDirect3DVertexShader9 *)wrapper;
+      (*ppShader)->AddRef();
+    }
+    else
+    {
+      *ppShader = real;
+    }
+    real->Release();
+  }
+  else
+  {
+    *ppShader = NULL;
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1954,14 +2176,56 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetIndices(IDirect3DIndexBuff
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreatePixelShader(
     CONST DWORD *pFunction, IDirect3DPixelShader9 **ppShader)
 {
-  // TODO: wrap shader
-  return m_pDevice->CreatePixelShader(pFunction, ppShader);
+  IDirect3DPixelShader9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreatePixelShader(pFunction, &real));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DPixelShader9 *wrappedPS = new WrappedIDirect3DPixelShader9(real, this);
+    IDirect3DPixelShader9 *wrappedPtr = wrappedPS;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedPS->GetResourceID());
+      record->resType = D3D9ResourceType::PixelShader;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreatePixelShader);
+        Serialise_CreatePixelShader(ser, pFunction, &wrappedPtr);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppShader = wrappedPS;
+  }
+  else
+  {
+    if(ppShader)
+      *ppShader = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetPixelShader(IDirect3DPixelShader9 *pShader)
 {
+  IDirect3DPixelShader9 *realShader = NULL;
+  if(pShader)
+  {
+    WrappedIDirect3DPixelShader9 *wrappedPS =
+        dynamic_cast<WrappedIDirect3DPixelShader9 *>(pShader);
+    if(wrappedPS)
+      realShader = wrappedPS->GetReal();
+    else
+      realShader = pShader;
+  }
+
   HRESULT ret;
-  SERIALISE_TIME_CALL(ret = m_pDevice->SetPixelShader(pShader));
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetPixelShader(realShader));
 
   if(IsActiveCapturing(m_State))
   {
@@ -1977,8 +2241,32 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetPixelShader(IDirect3DPixel
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetPixelShader(
     IDirect3DPixelShader9 **ppShader)
 {
-  // TODO: return wrapped shader
-  return m_pDevice->GetPixelShader(ppShader);
+  if(ppShader == NULL)
+    return D3DERR_INVALIDCALL;
+
+  IDirect3DPixelShader9 *real = NULL;
+  HRESULT ret = m_pDevice->GetPixelShader(&real);
+
+  if(SUCCEEDED(ret) && real)
+  {
+    IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
+    if(wrapper)
+    {
+      *ppShader = (IDirect3DPixelShader9 *)wrapper;
+      (*ppShader)->AddRef();
+    }
+    else
+    {
+      *ppShader = real;
+    }
+    real->Release();
+  }
+  else
+  {
+    *ppShader = NULL;
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////

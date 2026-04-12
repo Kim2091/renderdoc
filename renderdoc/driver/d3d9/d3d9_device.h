@@ -98,6 +98,7 @@ public:
   const CaptureState &GetState() { return m_State; }
   ResourceId GetResourceID() { return m_ResourceID; }
   WriteSerialiser &GetScratchSerialiser() { return m_ScratchSerialiser; }
+  D3D9ResourceRecord *GetDeviceRecord() { return m_DeviceRecord; }
   Threading::CriticalSection &D3DLock() { return m_D3DLock; }
 
   SDFile *GetStructuredFile() { return m_StructuredFile; }
@@ -321,6 +322,12 @@ public:
   IMPLEMENT_FUNCTION_SERIALISED(HRESULT STDMETHODCALLTYPE, BeginStateBlock);
   IMPLEMENT_FUNCTION_SERIALISED(HRESULT STDMETHODCALLTYPE, EndStateBlock,
                                 IDirect3DStateBlock9 **ppSB);
+
+  // State block event serialization (called from WrappedIDirect3DStateBlock9)
+  template <typename SerialiserType>
+  bool Serialise_StateBlockCapture(SerialiserType &ser, IDirect3DStateBlock9 *pSB);
+  template <typename SerialiserType>
+  bool Serialise_StateBlockApply(SerialiserType &ser, IDirect3DStateBlock9 *pSB);
 
   // -- Clip status --
   IMPLEMENT_FUNCTION_SERIALISED(HRESULT STDMETHODCALLTYPE, SetClipStatus,
