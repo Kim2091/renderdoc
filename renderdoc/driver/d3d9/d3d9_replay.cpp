@@ -865,6 +865,9 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
 
     if(srcSurf)
     {
+      // Unwrap the surface for passing to the real device
+      IDirect3DSurface9 *realSrcSurf = (IDirect3DSurface9 *)UnwrapD3D9Resource(srcSurf);
+
       // Create a lockable offscreen surface
       IDirect3DSurface9 *staging = NULL;
       HRESULT hr = m_pDevice->GetReal()->CreateOffscreenPlainSurface(
@@ -872,7 +875,7 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
 
       if(SUCCEEDED(hr) && staging)
       {
-        hr = m_pDevice->GetReal()->GetRenderTargetData(srcSurf, staging);
+        hr = m_pDevice->GetReal()->GetRenderTargetData(realSrcSurf, staging);
         if(FAILED(hr))
         {
           // If GetRenderTargetData fails (e.g., not a render target), try StretchRect or lock
@@ -963,13 +966,16 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
 
     if(srcSurf)
     {
+      // Unwrap the surface for passing to the real device
+      IDirect3DSurface9 *realSrcSurf = (IDirect3DSurface9 *)UnwrapD3D9Resource(srcSurf);
+
       IDirect3DSurface9 *staging = NULL;
       HRESULT hr = m_pDevice->GetReal()->CreateOffscreenPlainSurface(
           desc.Width, desc.Height, desc.Format, D3DPOOL_SYSTEMMEM, &staging, NULL);
 
       if(SUCCEEDED(hr) && staging)
       {
-        hr = m_pDevice->GetReal()->GetRenderTargetData(srcSurf, staging);
+        hr = m_pDevice->GetReal()->GetRenderTargetData(realSrcSurf, staging);
         if(FAILED(hr))
         {
           D3DLOCKED_RECT locked;
@@ -1049,13 +1055,16 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
     D3DSURFACE_DESC desc;
     surf->GetDesc(&desc);
 
+    // Unwrap the surface for passing to the real device
+    IDirect3DSurface9 *realSurf = (IDirect3DSurface9 *)UnwrapD3D9Resource(surf);
+
     IDirect3DSurface9 *staging = NULL;
     HRESULT hr = m_pDevice->GetReal()->CreateOffscreenPlainSurface(
         desc.Width, desc.Height, desc.Format, D3DPOOL_SYSTEMMEM, &staging, NULL);
 
     if(SUCCEEDED(hr) && staging)
     {
-      hr = m_pDevice->GetReal()->GetRenderTargetData(surf, staging);
+      hr = m_pDevice->GetReal()->GetRenderTargetData(realSurf, staging);
       if(FAILED(hr))
       {
         D3DLOCKED_RECT locked;

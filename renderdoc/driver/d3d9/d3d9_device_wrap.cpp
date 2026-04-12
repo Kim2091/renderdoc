@@ -522,14 +522,30 @@ bool WrappedIDirect3DDevice9::Serialise_SetTexture(SerialiserType &ser, DWORD St
                                                     IDirect3DBaseTexture9 *pTexture)
 {
   SERIALISE_ELEMENT(Stage);
-  // Resource wrappers not yet available; serialize a placeholder ResourceId
-  SERIALISE_ELEMENT_LOCAL(Texture, ResourceId()).Important();
+
+  ResourceId Texture;
+  if(ser.IsWriting())
+    Texture = GetIDForD3D9Resource(pTexture);
+  SERIALISE_ELEMENT(Texture).Important();
 
   SERIALISE_CHECK_READ_ERRORS();
 
   if(IsReplayingAndReading())
   {
-    // TODO: look up wrapped texture from ResourceId once resource wrappers exist
+    if(Texture != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(Texture);
+      if(res)
+      {
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          m_pDevice->SetTexture(Stage, (IDirect3DBaseTexture9 *)info->realObject);
+      }
+    }
+    else
+    {
+      m_pDevice->SetTexture(Stage, NULL);
+    }
     if(Stage < D3D9_TOTAL_SAMPLERS)
       m_RenderState.textures[Stage] = Texture;
   }
@@ -555,6 +571,21 @@ bool WrappedIDirect3DDevice9::Serialise_SetStreamSource(SerialiserType &ser, UIN
 
   if(IsReplayingAndReading())
   {
+    if(Buffer != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(Buffer);
+      if(res)
+      {
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          m_pDevice->SetStreamSource(StreamNumber, (IDirect3DVertexBuffer9 *)info->realObject,
+                                     OffsetInBytes, Stride);
+      }
+    }
+    else
+    {
+      m_pDevice->SetStreamSource(StreamNumber, NULL, 0, 0);
+    }
     if(StreamNumber < D3D9_MAX_STREAMS)
     {
       m_RenderState.streamSources[StreamNumber].buffer = Buffer;
@@ -598,6 +629,20 @@ bool WrappedIDirect3DDevice9::Serialise_SetIndices(SerialiserType &ser,
 
   if(IsReplayingAndReading())
   {
+    if(IndexBuffer != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(IndexBuffer);
+      if(res)
+      {
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          m_pDevice->SetIndices((IDirect3DIndexBuffer9 *)info->realObject);
+      }
+    }
+    else
+    {
+      m_pDevice->SetIndices(NULL);
+    }
     m_RenderState.indices = IndexBuffer;
   }
 
@@ -610,14 +655,31 @@ bool WrappedIDirect3DDevice9::Serialise_SetRenderTarget(SerialiserType &ser,
                                                          IDirect3DSurface9 *pRenderTarget)
 {
   SERIALISE_ELEMENT(RenderTargetIndex);
-  // Resource wrappers not yet available; serialize a placeholder ResourceId
-  SERIALISE_ELEMENT_LOCAL(RenderTarget, ResourceId()).Important();
+
+  ResourceId RenderTarget;
+  if(ser.IsWriting())
+    RenderTarget = GetIDForD3D9Resource(pRenderTarget);
+  SERIALISE_ELEMENT(RenderTarget).Important();
 
   SERIALISE_CHECK_READ_ERRORS();
 
   if(IsReplayingAndReading())
   {
-    // TODO: look up wrapped surface from ResourceId once resource wrappers exist
+    if(RenderTarget != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(RenderTarget);
+      if(res)
+      {
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          m_pDevice->SetRenderTarget(RenderTargetIndex,
+                                     (IDirect3DSurface9 *)info->realObject);
+      }
+    }
+    else
+    {
+      m_pDevice->SetRenderTarget(RenderTargetIndex, NULL);
+    }
     if(RenderTargetIndex < D3D9_MAX_RENDER_TARGETS)
       m_RenderState.renderTargets[RenderTargetIndex] = RenderTarget;
   }
@@ -629,14 +691,29 @@ template <typename SerialiserType>
 bool WrappedIDirect3DDevice9::Serialise_SetDepthStencilSurface(SerialiserType &ser,
                                                                 IDirect3DSurface9 *pNewZStencil)
 {
-  // Resource wrappers not yet available; serialize a placeholder ResourceId
-  SERIALISE_ELEMENT_LOCAL(DepthSurface, ResourceId()).Important();
+  ResourceId DepthSurface;
+  if(ser.IsWriting())
+    DepthSurface = GetIDForD3D9Resource(pNewZStencil);
+  SERIALISE_ELEMENT(DepthSurface).Important();
 
   SERIALISE_CHECK_READ_ERRORS();
 
   if(IsReplayingAndReading())
   {
-    // TODO: look up wrapped surface from ResourceId once resource wrappers exist
+    if(DepthSurface != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(DepthSurface);
+      if(res)
+      {
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          m_pDevice->SetDepthStencilSurface((IDirect3DSurface9 *)info->realObject);
+      }
+    }
+    else
+    {
+      m_pDevice->SetDepthStencilSurface(NULL);
+    }
     m_RenderState.depthStencil = DepthSurface;
   }
 

@@ -49,6 +49,7 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real, Wrapped
   m_StateBlockRecording = false;
   m_Replay = NULL;
   m_DeviceRecord = NULL;
+  m_FrameReader = NULL;
 
   m_CurEventID = 0;
   m_CurActionID = 0;
@@ -120,6 +121,7 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real,
   m_FrameCounter = 0;
   m_StateBlockRecording = false;
   m_DeviceRecord = NULL;
+  m_FrameReader = NULL;
 
   m_CurEventID = 0;
   m_CurActionID = 0;
@@ -173,6 +175,7 @@ WrappedIDirect3DDevice9::~WrappedIDirect3DDevice9()
 
   SAFE_DELETE(m_ResourceManager);
   SAFE_DELETE(m_Replay);
+  SAFE_DELETE(m_FrameReader);
 
   SAFE_RELEASE(m_pDevice);
 }
@@ -194,9 +197,6 @@ void WrappedIDirect3DDevice9::AddEvent()
   apievent.chunkIndex = uint32_t(m_StructuredFile->chunks.size() - 1);
 
   m_CurEvents.push_back(apievent);
-
-  if(IsLoading(m_State))
-    m_CurEventID++;
 }
 
 void WrappedIDirect3DDevice9::AddAction(const ActionDescription &a)
@@ -289,8 +289,6 @@ void WrappedIDirect3DDevice9::StartFrameCapture(DeviceOwnedWindow devWnd)
   m_CapturedFrames.push_back(frame);
 
   GetResourceManager()->ClearReferencedResources();
-
-  GetResourceManager()->MarkResourceFrameReferenced(m_ResourceID, eFrameRef_PartialWrite);
 
   GetResourceManager()->FreeCaptureData();
 
@@ -738,6 +736,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateTexture(
                                 pSharedHandle);
         record->AddChunk(scope.Get());
       }
+
+      // Mark dirty so PrepareInitialContents will capture texture data when F12 is pressed
+      GetResourceManager()->MarkDirtyResource(wrappedTex->GetResourceID());
     }
 
     *ppTexture = wrappedTex;
@@ -781,6 +782,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateVolumeTexture(
                                       &wrappedPtr, pSharedHandle);
         record->AddChunk(scope.Get());
       }
+
+      // Mark dirty so PrepareInitialContents will capture volume texture data
+      GetResourceManager()->MarkDirtyResource(wrappedVol->GetResourceID());
     }
 
     *ppVolumeTexture = wrappedVol;
@@ -824,6 +828,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateCubeTexture(
                                     pSharedHandle);
         record->AddChunk(scope.Get());
       }
+
+      // Mark dirty so PrepareInitialContents will capture cube texture data
+      GetResourceManager()->MarkDirtyResource(wrappedCube->GetResourceID());
     }
 
     *ppCubeTexture = wrappedCube;
@@ -867,6 +874,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateVertexBuffer(
         Serialise_CreateVertexBuffer(ser, Length, Usage, FVF, Pool, &wrappedPtr, pSharedHandle);
         record->AddChunk(scope.Get());
       }
+
+      // Mark dirty so PrepareInitialContents will capture buffer data
+      GetResourceManager()->MarkDirtyResource(wrappedVB->GetResourceID());
     }
 
     *ppVertexBuffer = wrappedVB;
@@ -910,6 +920,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateIndexBuffer(
         Serialise_CreateIndexBuffer(ser, Length, Usage, Format, Pool, &wrappedPtr, pSharedHandle);
         record->AddChunk(scope.Get());
       }
+
+      // Mark dirty so PrepareInitialContents will capture buffer data
+      GetResourceManager()->MarkDirtyResource(wrappedIB->GetResourceID());
     }
 
     *ppIndexBuffer = wrappedIB;
@@ -954,6 +967,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateRenderTarget(
                                      Lockable, &wrappedPtr, pSharedHandle);
         record->AddChunk(scope.Get());
       }
+
+      // Mark dirty so PrepareInitialContents will capture render target data
+      GetResourceManager()->MarkDirtyResource(wrappedSurf->GetResourceID());
     }
 
     *ppSurface = wrappedSurf;
@@ -999,6 +1015,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateDepthStencilSurface(
                                             pSharedHandle);
         record->AddChunk(scope.Get());
       }
+
+      // Mark dirty so PrepareInitialContents will capture depth stencil data
+      GetResourceManager()->MarkDirtyResource(wrappedSurf->GetResourceID());
     }
 
     *ppSurface = wrappedSurf;
@@ -1252,6 +1271,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateOffscreenPlainSurface(
                                               pSharedHandle);
         record->AddChunk(scope.Get());
       }
+
+      // Mark dirty so PrepareInitialContents will capture surface data
+      GetResourceManager()->MarkDirtyResource(wrappedSurf->GetResourceID());
     }
 
     *ppSurface = wrappedSurf;
@@ -1286,6 +1308,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetRenderTarget(
 
   if(IsActiveCapturing(m_State))
   {
+    if(pRenderTarget)
+    {
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(pRenderTarget);
+      if(info)
+        GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_ReadBeforeWrite);
+    }
+
     USE_SCRATCH_SERIALISER();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetRenderTarget);
     Serialise_SetRenderTarget(ser, RenderTargetIndex, pRenderTarget);
@@ -1345,6 +1374,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetDepthStencilSurface(
 
   if(IsActiveCapturing(m_State))
   {
+    if(pNewZStencil)
+    {
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(pNewZStencil);
+      if(info)
+        GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_ReadBeforeWrite);
+    }
+
     USE_SCRATCH_SERIALISER();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetDepthStencilSurface);
     Serialise_SetDepthStencilSurface(ser, pNewZStencil);
@@ -1850,6 +1886,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetTexture(DWORD Stage,
 
   if(IsActiveCapturing(m_State))
   {
+    if(pTexture)
+    {
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(pTexture);
+      if(info)
+        GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_Read);
+    }
+
     USE_SCRATCH_SERIALISER();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetTexture);
     Serialise_SetTexture(ser, Stage, pTexture);
@@ -2219,6 +2262,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexDeclaration(
 
   if(IsActiveCapturing(m_State))
   {
+    if(pDecl)
+    {
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(pDecl);
+      if(info)
+        GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_Read);
+    }
+
     USE_SCRATCH_SERIALISER();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetVertexDeclaration);
     Serialise_SetVertexDeclaration(ser, pDecl);
@@ -2349,6 +2399,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexShader(
 
   if(IsActiveCapturing(m_State))
   {
+    if(pShader)
+    {
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(pShader);
+      if(info)
+        GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_Read);
+    }
+
     USE_SCRATCH_SERIALISER();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetVertexShader);
     Serialise_SetVertexShader(ser, pShader);
@@ -2528,6 +2585,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetStreamSource(
 
   if(IsActiveCapturing(m_State))
   {
+    if(pStreamData)
+    {
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(pStreamData);
+      if(info)
+        GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_Read);
+    }
+
     USE_SCRATCH_SERIALISER();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetStreamSource);
     Serialise_SetStreamSource(ser, StreamNumber, pStreamData, OffsetInBytes, Stride);
@@ -2617,6 +2681,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetIndices(IDirect3DIndexBuff
 
   if(IsActiveCapturing(m_State))
   {
+    if(pIndexData)
+    {
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(pIndexData);
+      if(info)
+        GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_Read);
+    }
+
     USE_SCRATCH_SERIALISER();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetIndices);
     Serialise_SetIndices(ser, pIndexData);
@@ -2714,6 +2785,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetPixelShader(IDirect3DPixel
 
   if(IsActiveCapturing(m_State))
   {
+    if(pShader)
+    {
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(pShader);
+      if(info)
+        GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_Read);
+    }
+
     USE_SCRATCH_SERIALISER();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetPixelShader);
     Serialise_SetPixelShader(ser, pShader);
@@ -2943,6 +3021,194 @@ static rdcstr D3D9ChunkName(uint32_t idx)
   return ToStr((D3D9Chunk)idx);
 }
 
+bool WrappedIDirect3DDevice9::ProcessChunk(ReadSerialiser &ser, D3D9Chunk chunk)
+{
+  switch(chunk)
+  {
+    case D3D9Chunk::DeviceInitialisation:
+    {
+      SERIALISE_ELEMENT_LOCAL(initParams, D3D9InitParams());
+      SERIALISE_CHECK_READ_ERRORS();
+      return true;
+    }
+
+    // Resource creation
+    case D3D9Chunk::CreateTexture:
+      return Serialise_CreateTexture(ser, 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_DEFAULT, NULL, NULL);
+    case D3D9Chunk::CreateVolumeTexture:
+      return Serialise_CreateVolumeTexture(ser, 0, 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_DEFAULT,
+                                           NULL, NULL);
+    case D3D9Chunk::CreateCubeTexture:
+      return Serialise_CreateCubeTexture(ser, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_DEFAULT, NULL, NULL);
+    case D3D9Chunk::CreateVertexBuffer:
+      return Serialise_CreateVertexBuffer(ser, 0, 0, 0, D3DPOOL_DEFAULT, NULL, NULL);
+    case D3D9Chunk::CreateIndexBuffer:
+      return Serialise_CreateIndexBuffer(ser, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_DEFAULT, NULL, NULL);
+    case D3D9Chunk::CreateRenderTarget:
+      return Serialise_CreateRenderTarget(ser, 0, 0, D3DFMT_UNKNOWN, D3DMULTISAMPLE_NONE, 0, FALSE,
+                                          NULL, NULL);
+    case D3D9Chunk::CreateDepthStencilSurface:
+      return Serialise_CreateDepthStencilSurface(ser, 0, 0, D3DFMT_UNKNOWN, D3DMULTISAMPLE_NONE, 0,
+                                                 FALSE, NULL, NULL);
+    case D3D9Chunk::CreateOffscreenPlainSurface:
+      return Serialise_CreateOffscreenPlainSurface(ser, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_DEFAULT, NULL,
+                                                   NULL);
+    case D3D9Chunk::CreateVertexShader:
+      return Serialise_CreateVertexShader(ser, NULL, NULL);
+    case D3D9Chunk::CreatePixelShader:
+      return Serialise_CreatePixelShader(ser, NULL, NULL);
+    case D3D9Chunk::CreateVertexDeclaration:
+      return Serialise_CreateVertexDeclaration(ser, NULL, NULL);
+    case D3D9Chunk::CreateStateBlock:
+      return Serialise_CreateStateBlock(ser, D3DSBT_ALL, NULL);
+    case D3D9Chunk::CreateQuery:
+      return Serialise_CreateQuery(ser, D3DQUERYTYPE_EVENT, NULL);
+
+    // Draw calls
+    case D3D9Chunk::DrawPrimitive:
+      return Serialise_DrawPrimitive(ser, D3DPT_TRIANGLELIST, 0, 0);
+    case D3D9Chunk::DrawIndexedPrimitive:
+      return Serialise_DrawIndexedPrimitive(ser, D3DPT_TRIANGLELIST, 0, 0, 0, 0, 0);
+    case D3D9Chunk::DrawPrimitiveUP:
+      return Serialise_DrawPrimitiveUP(ser, D3DPT_TRIANGLELIST, 0, NULL, 0);
+    case D3D9Chunk::DrawIndexedPrimitiveUP:
+      return Serialise_DrawIndexedPrimitiveUP(ser, D3DPT_TRIANGLELIST, 0, 0, 0, NULL,
+                                              D3DFMT_INDEX16, NULL, 0);
+
+    // Frame / scene
+    case D3D9Chunk::Present: return Serialise_Present(ser, NULL, NULL, NULL, NULL);
+    case D3D9Chunk::SwapChainPresent:
+      return Serialise_SwapChainPresent(ser, NULL, NULL, NULL, NULL);
+    case D3D9Chunk::BeginScene: return Serialise_BeginScene(ser);
+    case D3D9Chunk::EndScene: return Serialise_EndScene(ser);
+    case D3D9Chunk::Clear: return Serialise_Clear(ser, 0, NULL, 0, 0, 0.0f, 0);
+    case D3D9Chunk::Reset: return Serialise_Reset(ser, NULL);
+
+    // Render state
+    case D3D9Chunk::SetRenderState:
+      return Serialise_SetRenderState(ser, D3DRS_ZENABLE, 0);
+    case D3D9Chunk::SetSamplerState:
+      return Serialise_SetSamplerState(ser, 0, D3DSAMP_ADDRESSU, 0);
+    case D3D9Chunk::SetTextureStageState:
+      return Serialise_SetTextureStageState(ser, 0, D3DTSS_COLOROP, 0);
+    case D3D9Chunk::SetTransform:
+      return Serialise_SetTransform(ser, D3DTS_WORLD, NULL);
+    case D3D9Chunk::SetViewport: return Serialise_SetViewport(ser, NULL);
+    case D3D9Chunk::SetScissorRect: return Serialise_SetScissorRect(ser, NULL);
+    case D3D9Chunk::SetClipPlane: return Serialise_SetClipPlane(ser, 0, NULL);
+    case D3D9Chunk::SetMaterial: return Serialise_SetMaterial(ser, NULL);
+    case D3D9Chunk::SetLight: return Serialise_SetLight(ser, 0, NULL);
+    case D3D9Chunk::LightEnable: return Serialise_LightEnable(ser, 0, FALSE);
+    case D3D9Chunk::SetNPatchMode: return Serialise_SetNPatchMode(ser, 0.0f);
+
+    // Shader state
+    case D3D9Chunk::SetVertexShader: return Serialise_SetVertexShader(ser, NULL);
+    case D3D9Chunk::SetPixelShader: return Serialise_SetPixelShader(ser, NULL);
+    case D3D9Chunk::SetVertexDeclaration: return Serialise_SetVertexDeclaration(ser, NULL);
+    case D3D9Chunk::SetFVF: return Serialise_SetFVF(ser, 0);
+    case D3D9Chunk::SetVertexShaderConstantF:
+      return Serialise_SetVertexShaderConstantF(ser, 0, NULL, 0);
+    case D3D9Chunk::SetVertexShaderConstantI:
+      return Serialise_SetVertexShaderConstantI(ser, 0, NULL, 0);
+    case D3D9Chunk::SetVertexShaderConstantB:
+      return Serialise_SetVertexShaderConstantB(ser, 0, NULL, 0);
+    case D3D9Chunk::SetPixelShaderConstantF:
+      return Serialise_SetPixelShaderConstantF(ser, 0, NULL, 0);
+    case D3D9Chunk::SetPixelShaderConstantI:
+      return Serialise_SetPixelShaderConstantI(ser, 0, NULL, 0);
+    case D3D9Chunk::SetPixelShaderConstantB:
+      return Serialise_SetPixelShaderConstantB(ser, 0, NULL, 0);
+
+    // Resource binding
+    case D3D9Chunk::SetTexture: return Serialise_SetTexture(ser, 0, NULL);
+    case D3D9Chunk::SetStreamSource: return Serialise_SetStreamSource(ser, 0, NULL, 0, 0);
+    case D3D9Chunk::SetStreamSourceFreq: return Serialise_SetStreamSourceFreq(ser, 0, 0);
+    case D3D9Chunk::SetIndices: return Serialise_SetIndices(ser, NULL);
+    case D3D9Chunk::SetRenderTarget: return Serialise_SetRenderTarget(ser, 0, NULL);
+    case D3D9Chunk::SetDepthStencilSurface: return Serialise_SetDepthStencilSurface(ser, NULL);
+
+    // Resource data
+    case D3D9Chunk::UpdateSurface: return Serialise_UpdateSurface(ser, NULL, NULL, NULL, NULL);
+    case D3D9Chunk::UpdateTexture: return Serialise_UpdateTexture(ser, NULL, NULL);
+    case D3D9Chunk::StretchRect:
+      return Serialise_StretchRect(ser, NULL, NULL, NULL, NULL, D3DTEXF_NONE);
+    case D3D9Chunk::ColorFill: return Serialise_ColorFill(ser, NULL, NULL, 0);
+    case D3D9Chunk::GetRenderTargetData:
+      return Serialise_GetRenderTargetData(ser, NULL, NULL);
+    case D3D9Chunk::GetFrontBufferData: return Serialise_GetFrontBufferData(ser, 0, NULL);
+
+    // State blocks
+    case D3D9Chunk::BeginStateBlock: return Serialise_BeginStateBlock(ser);
+    case D3D9Chunk::EndStateBlock: return Serialise_EndStateBlock(ser, NULL);
+    case D3D9Chunk::StateBlockCapture: return Serialise_StateBlockCapture(ser, NULL);
+    case D3D9Chunk::StateBlockApply: return Serialise_StateBlockApply(ser, NULL);
+
+    // Queries
+    case D3D9Chunk::QueryIssue: return Serialise_QueryIssue(ser, NULL, 0);
+
+    // Misc
+    case D3D9Chunk::SetSoftwareVertexProcessing:
+      return Serialise_SetSoftwareVertexProcessing(ser, FALSE);
+
+    // Unhandled chunks — skip gracefully
+    case D3D9Chunk::SetResourceName:
+    case D3D9Chunk::CreateDevice:
+    case D3D9Chunk::CreateAdditionalSwapChain:
+    case D3D9Chunk::LockRect:
+    case D3D9Chunk::UnlockRect:
+    case D3D9Chunk::LockBox:
+    case D3D9Chunk::UnlockBox:
+    case D3D9Chunk::LockVertexBuffer:
+    case D3D9Chunk::UnlockVertexBuffer:
+    case D3D9Chunk::LockIndexBuffer:
+    case D3D9Chunk::UnlockIndexBuffer:
+    case D3D9Chunk::QueryGetData:
+    case D3D9Chunk::SetDialogBoxMode:
+    case D3D9Chunk::ValidateDevice:
+    case D3D9Chunk::SetCursorProperties:
+    case D3D9Chunk::SetCursorPosition:
+    case D3D9Chunk::ShowCursor:
+    case D3D9Chunk::DrawRectPatch:
+    case D3D9Chunk::DrawTriPatch:
+      ser.SkipCurrentChunk();
+      return true;
+
+    default: break;
+  }
+
+  // handle system chunks
+  SystemChunk system = (SystemChunk)chunk;
+  if(system == SystemChunk::DriverInit)
+  {
+    SERIALISE_ELEMENT(m_InitParams);
+    SERIALISE_CHECK_READ_ERRORS();
+    return true;
+  }
+  else if(system == SystemChunk::InitialContentsList)
+  {
+    GetResourceManager()->CreateInitialContents(ser);
+    return true;
+  }
+  else if(system == SystemChunk::InitialContents)
+  {
+    return GetResourceManager()->Serialise_InitialState(ser, ResourceId(), NULL, NULL);
+  }
+  else if(system == SystemChunk::CaptureScope)
+  {
+    return Serialise_CaptureScope(ser);
+  }
+  else if(system < SystemChunk::FirstDriverChunk)
+  {
+    RDCERR("Unexpected system chunk in capture data: %u", system);
+    ser.SkipCurrentChunk();
+    return true;
+  }
+
+  RDCERR("Unhandled D3D9 chunk type: %u", (uint32_t)chunk);
+  ser.SkipCurrentChunk();
+  return true;
+}
+
 RDResult WrappedIDirect3DDevice9::ReadLogInitialisation(RDCFile *rdc, bool storeStructuredBuffers)
 {
   int sectionIdx = rdc->SectionIndex(SectionType::FrameCapture);
@@ -2979,42 +3245,111 @@ RDResult WrappedIDirect3DDevice9::ReadLogInitialisation(RDCFile *rdc, bool store
   m_CurActionID = 0;
 
   {
-    // set up the parent action
     m_ParentAction.children.clear();
     m_ActionStack.clear();
     m_ActionStack.push_back(&m_ParentAction);
   }
 
+  uint64_t frameDataSize = 0;
+
   for(;;)
   {
-    m_CurChunkOffset = ser.GetReader()->GetOffset();
+    uint64_t offsetStart = reader->GetOffset();
 
     D3D9Chunk chunktype = ser.ReadChunk<D3D9Chunk>();
 
-    if(ser.GetReader()->IsErrored())
+    if(reader->IsErrored())
       return RDResult(ResultCode::APIDataCorrupted, ser.GetError().message);
 
-    bool success = true;
+    bool success = ProcessChunk(ser, chunktype);
 
-    if(chunktype == D3D9Chunk::Max || ser.GetReader()->AtEnd())
-    {
-      ser.EndChunk();
-      break;
-    }
-
-    m_CurEventID++;
-
-    // For now, skip the actual chunk processing since the serialised method dispatch
-    // table hasn't been fully wired up for replay yet. We just skip chunks.
-    // TODO: Wire up the full chunk dispatch for all D3D9Chunk types
-    ser.SkipCurrentChunk();
     ser.EndChunk();
 
-    if(ser.GetReader()->IsErrored())
+    if(reader->IsErrored())
       return RDResult(ResultCode::APIDataCorrupted, ser.GetError().message);
 
     if(!success)
       return RDResult(ResultCode::APIDataCorrupted, "Failed to process chunk during replay");
+
+    RenderDoc::Inst().SetProgress(LoadProgress::FileInitialRead,
+                                  float(reader->GetOffset()) / float(reader->GetSize()));
+
+    if((SystemChunk)chunktype == SystemChunk::CaptureScope)
+    {
+      m_FrameRecord.frameInfo.fileOffset = offsetStart;
+
+      // read the remaining data into memory for frame replay
+      frameDataSize = reader->GetSize() - reader->GetOffset();
+
+      SAFE_DELETE(m_FrameReader);
+      m_FrameReader = new StreamReader(reader, frameDataSize);
+
+      GetResourceManager()->ApplyInitialContents();
+
+      // first-pass read of frame contents to build action list
+      {
+        m_FrameReader->SetOffset(0);
+
+        ReadSerialiser frameSer(m_FrameReader, Ownership::Nothing);
+        frameSer.SetStringDatabase(&m_StringDB);
+        frameSer.SetUserData(GetResourceManager());
+        frameSer.SetVersion(m_SectionVersion);
+
+        // configure structured export on the frame serialiser so that chunks are recorded
+        // into the structured file, which AddEvent() needs for chunkIndex
+        frameSer.ConfigureStructuredExport(&D3D9ChunkName, storeStructuredBuffers, 0, 1.0);
+
+        // move the structured file (containing init chunks) into the frame serialiser
+        // so that frame chunks are appended after init chunks
+        frameSer.GetStructuredFile().Swap(*m_StructuredFile);
+
+        m_StructuredFile = &frameSer.GetStructuredFile();
+
+        m_State = CaptureState::LoadingReplaying;
+
+        m_CurEventID = 1;
+
+        for(;;)
+        {
+          if(m_FrameReader->AtEnd())
+            break;
+
+          m_CurChunkOffset = m_FrameReader->GetOffset();
+
+          D3D9Chunk innerChunk = frameSer.ReadChunk<D3D9Chunk>();
+
+          if(frameSer.GetReader()->IsErrored())
+            return RDResult(ResultCode::APIDataCorrupted, frameSer.GetError().message);
+
+          if(innerChunk == D3D9Chunk::Max || frameSer.GetReader()->AtEnd())
+          {
+            frameSer.EndChunk();
+            break;
+          }
+
+          success = ProcessChunk(frameSer, innerChunk);
+
+          frameSer.EndChunk();
+
+          if(frameSer.GetReader()->IsErrored())
+            return RDResult(ResultCode::APIDataCorrupted, frameSer.GetError().message);
+
+          if(!success)
+            return RDResult(ResultCode::APIDataCorrupted,
+                            "Failed to process chunk during frame replay");
+
+          m_CurEventID++;
+        }
+
+        // swap the structured data back out of the frame serialiser
+        m_StructuredFile->Swap(*m_StoredStructuredData);
+
+        m_StructuredFile = m_StoredStructuredData;
+      }
+    }
+
+    if((SystemChunk)chunktype == SystemChunk::CaptureScope || reader->IsErrored() || reader->AtEnd())
+      break;
   }
 
   // swap the loaded action list into the frame record
@@ -3024,10 +3359,11 @@ RDResult WrappedIDirect3DDevice9::ReadLogInitialisation(RDCFile *rdc, bool store
 
   GetReplay()->WriteFrameRecord() = m_FrameRecord;
 
-  if(storeStructuredBuffers)
-    m_StoredStructuredData->Swap(*m_StructuredFile);
-
-  m_StructuredFile = m_StoredStructuredData;
+  m_FrameRecord.frameInfo.uncompressedFileSize =
+      rdc->GetSectionProperties(sectionIdx).uncompressedSize;
+  m_FrameRecord.frameInfo.compressedFileSize =
+      rdc->GetSectionProperties(sectionIdx).compressedSize;
+  m_FrameRecord.frameInfo.persistentSize = frameDataSize;
 
   return ResultCode::Succeeded;
 }
@@ -3035,9 +3371,80 @@ RDResult WrappedIDirect3DDevice9::ReadLogInitialisation(RDCFile *rdc, bool store
 void WrappedIDirect3DDevice9::ReplayLog(uint32_t startEventID, uint32_t endEventID,
                                         ReplayLogType replayType)
 {
-  // TODO: Implement full replay log processing
-  // For now this is a stub that will be fleshed out when the chunk dispatch is wired up.
-  RDCDEBUG("D3D9 ReplayLog(%u, %u, %d)", startEventID, endEventID, (int)replayType);
+  bool partial = true;
+
+  if(startEventID == 0 && (replayType == eReplay_WithoutDraw || replayType == eReplay_Full))
+  {
+    startEventID = 1;
+    partial = false;
+  }
+
+  if(!partial)
+    GetResourceManager()->ApplyInitialContents();
+
+  m_State = CaptureState::ActiveReplaying;
+
+  if(replayType == eReplay_Full)
+  {
+    // replay is: startEventID to endEventID inclusive
+  }
+  else if(replayType == eReplay_WithoutDraw)
+  {
+    // replay is: startEventID to endEventID-1 inclusive
+    if(endEventID > 0)
+      endEventID = RDCMAX(1U, endEventID) - 1;
+  }
+  else if(replayType == eReplay_OnlyDraw)
+  {
+    // replay only the single endEventID
+    startEventID = endEventID;
+  }
+
+  if(!m_FrameReader)
+  {
+    RDCERR("Can't replay without frame reader");
+    return;
+  }
+
+  m_FrameReader->SetOffset(0);
+
+  ReadSerialiser ser(m_FrameReader, Ownership::Nothing);
+  ser.SetStringDatabase(&m_StringDB);
+  ser.SetUserData(GetResourceManager());
+  ser.SetVersion(m_SectionVersion);
+
+  m_CurEventID = 1;
+
+  for(;;)
+  {
+    if(m_CurEventID > endEventID || m_FrameReader->AtEnd())
+      break;
+
+    m_CurChunkOffset = ser.GetReader()->GetOffset();
+
+    D3D9Chunk chunktype = ser.ReadChunk<D3D9Chunk>();
+
+    if(ser.GetReader()->IsErrored() || chunktype == D3D9Chunk::Max || ser.GetReader()->AtEnd())
+    {
+      ser.EndChunk();
+      break;
+    }
+
+    if(m_CurEventID >= startEventID && m_CurEventID <= endEventID)
+    {
+      ProcessChunk(ser, chunktype);
+    }
+    else
+    {
+      ser.SkipCurrentChunk();
+    }
+
+    ser.EndChunk();
+
+    m_CurEventID++;
+  }
+
+  m_State = CaptureState::LoadingReplaying;
 }
 
 const ActionDescription *WrappedIDirect3DDevice9::GetAction(uint32_t eventId)

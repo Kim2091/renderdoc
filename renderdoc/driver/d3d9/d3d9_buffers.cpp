@@ -207,8 +207,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DVertexBuffer9::Unlock()
   if(m_ShadowData && m_LockedData)
     memcpy(m_ShadowData + m_LockedOffset, m_LockedData, m_LockedSize);
 
-  // Serialize if capturing
-  if(IsActiveCapturing(m_pDevice->GetState()))
+  // Mark dirty in any capture mode (background or active) so PrepareInitialContents can find it
+  if(IsCaptureMode(m_pDevice->GetState()))
   {
     m_pDevice->GetResourceManager()->MarkDirtyResource(m_ID);
 
@@ -408,8 +408,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DIndexBuffer9::Unlock()
   if(m_ShadowData && m_LockedData)
     memcpy(m_ShadowData + m_LockedOffset, m_LockedData, m_LockedSize);
 
-  // Serialize if capturing
-  if(IsActiveCapturing(m_pDevice->GetState()))
+  // Mark dirty in any capture mode (background or active) so PrepareInitialContents can find it
+  if(IsCaptureMode(m_pDevice->GetState()))
   {
     m_pDevice->GetResourceManager()->MarkDirtyResource(m_ID);
 

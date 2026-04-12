@@ -241,7 +241,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DSurface9::LockRect(D3DLOCKED_RECT *pLo
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DSurface9::UnlockRect()
 {
-  if(m_Lock.active && IsActiveCapturing(m_pDevice->GetState()))
+  if(m_Lock.active && IsCaptureMode(m_pDevice->GetState()))
   {
     D3DSURFACE_DESC desc;
     m_pReal->GetDesc(&desc);
@@ -440,7 +440,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DVolume9::LockBox(D3DLOCKED_BOX *pLocke
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DVolume9::UnlockBox()
 {
-  if(m_Lock.active && IsActiveCapturing(m_pDevice->GetState()))
+  if(m_Lock.active && IsCaptureMode(m_pDevice->GetState()))
   {
     m_pDevice->GetResourceManager()->MarkDirtyResource(m_ID);
 
@@ -706,7 +706,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DTexture9::LockRect(UINT Level,
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DTexture9::UnlockRect(UINT Level)
 {
-  if(m_Lock.active && m_Lock.level == Level && IsActiveCapturing(m_pDevice->GetState()))
+  if(m_Lock.active && m_Lock.level == Level && IsCaptureMode(m_pDevice->GetState()))
   {
     D3DSURFACE_DESC desc;
     m_pReal->GetLevelDesc(Level, &desc);
@@ -994,7 +994,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DCubeTexture9::UnlockRect(D3DCUBEMAP_FA
                                                                     UINT Level)
 {
   if(m_Lock.active && m_Lock.face == FaceType && m_Lock.level == Level &&
-     IsActiveCapturing(m_pDevice->GetState()))
+     IsCaptureMode(m_pDevice->GetState()))
   {
     D3DSURFACE_DESC desc;
     m_pReal->GetLevelDesc(Level, &desc);
@@ -1283,7 +1283,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DVolumeTexture9::LockBox(UINT Level,
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DVolumeTexture9::UnlockBox(UINT Level)
 {
-  if(m_Lock.active && m_Lock.level == Level && IsActiveCapturing(m_pDevice->GetState()))
+  if(m_Lock.active && m_Lock.level == Level && IsCaptureMode(m_pDevice->GetState()))
   {
     m_pDevice->GetResourceManager()->MarkDirtyResource(m_ID);
 

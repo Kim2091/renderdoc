@@ -97,6 +97,9 @@ private:
   rdcarray<ActionDescription *> m_ActionStack;
   ActionDescription m_ParentAction;
 
+  // Saved frame data for ReplayLog
+  StreamReader *m_FrameReader;
+
 public:
   WrappedIDirect3DDevice9(IDirect3DDevice9 *real, WrappedIDirect3D9 *d3d9,
                           D3DPRESENT_PARAMETERS *pPresentationParameters);
@@ -140,6 +143,7 @@ public:
 
   RDResult ReadLogInitialisation(RDCFile *rdc, bool storeStructuredBuffers);
   void ReplayLog(uint32_t startEventID, uint32_t endEventID, ReplayLogType replayType);
+  bool ProcessChunk(ReadSerialiser &ser, D3D9Chunk chunk);
 
   const ActionDescription *GetAction(uint32_t eventId);
 
