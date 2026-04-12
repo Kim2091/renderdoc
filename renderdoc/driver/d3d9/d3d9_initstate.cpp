@@ -918,7 +918,8 @@ bool WrappedIDirect3DDevice9::Serialise_InitialState(SerialiserType &ser, Resour
   {
     if(ser.IsWriting())
     {
-      ser.Serialise("data"_lit, initial->shadowData, dataLen, SerialiserFlags::NoFlags);
+      byte *dataPtr = initial->shadowData;
+      ser.Serialise("data"_lit, dataPtr, dataLen, SerialiserFlags::NoFlags);
     }
     else
     {

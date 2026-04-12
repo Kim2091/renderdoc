@@ -2779,7 +2779,7 @@ RDResult WrappedIDirect3DDevice9::ReadLogInitialisation(RDCFile *rdc, bool store
 
   ReadSerialiser ser(reader, Ownership::Stream);
 
-  ser.SetStringDatabase(&m_StructuredFile->strings);
+  ser.SetStringDatabase(&m_StringDB);
   ser.SetUserData(GetResourceManager());
 
   ser.ConfigureStructuredExport(&D3D9ChunkName, storeStructuredBuffers, 0, 1.0);
@@ -2815,7 +2815,7 @@ RDResult WrappedIDirect3DDevice9::ReadLogInitialisation(RDCFile *rdc, bool store
 
     bool success = true;
 
-    if(chunktype == D3D9Chunk::Max || chunktype == (D3D9Chunk)SystemChunk::Max)
+    if(chunktype == D3D9Chunk::Max || ser.GetReader()->AtEnd())
     {
       ser.EndChunk();
       break;

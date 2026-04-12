@@ -976,7 +976,7 @@ void ResourceManager<Configuration>::SetInitialContents(ResourceId id, InitialCo
   if(it != m_InitialContents.end())
     it->second.Free(this);
 
-  m_InitialContents[id].data = contents;
+  m_InitialContents[id].data = std::move(contents);
 }
 
 template <typename Configuration>

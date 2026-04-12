@@ -102,13 +102,32 @@ private:
 
 struct D3D9ResourceRecord : public ResourceRecord
 {
-  D3D9ResourceRecord(ResourceId id) : ResourceRecord(id, true) {}
-  ~D3D9ResourceRecord() {}
+  enum
+  {
+    NullResource = NULL
+  };
+
+  D3D9ResourceRecord(ResourceId id)
+      : ResourceRecord(id, true), NumSubResources(0), SubResources(NULL)
+  {
+  }
+  ~D3D9ResourceRecord()
+  {
+    for(int i = 0; i < NumSubResources; i++)
+    {
+      SubResources[i]->DeleteChunks();
+      SAFE_DELETE(SubResources[i]);
+    }
+    SAFE_DELETE_ARRAY(SubResources);
+  }
 
   D3D9ResourceType resType = D3D9ResourceType::Unknown;
   D3DPOOL pool = D3DPOOL_DEFAULT;
   DWORD usage = 0;
   uint64_t Length = 0;
+
+  int NumSubResources;
+  D3D9ResourceRecord **SubResources;
 
   // For tracking Lock/Unlock shadow data on write-only resources
   byte *shadowData = NULL;

@@ -1,0 +1,850 @@
+/******************************************************************************
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2026 Baldur Karlsson
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ ******************************************************************************/
+
+#include "common/common.h"
+#include "d3d9_common.h"
+#include "d3d9_manager.h"
+
+/////////////////////////////////////////////////////////////////////////////
+// D3D9ResourceType
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3D9ResourceType &el)
+{
+  BEGIN_ENUM_STRINGISE(D3D9ResourceType);
+  {
+    STRINGISE_ENUM_CLASS(Unknown)
+    STRINGISE_ENUM_CLASS(Device)
+    STRINGISE_ENUM_CLASS(SwapChain)
+    STRINGISE_ENUM_CLASS(Texture)
+    STRINGISE_ENUM_CLASS(CubeTexture)
+    STRINGISE_ENUM_CLASS(VolumeTexture)
+    STRINGISE_ENUM_CLASS(Surface)
+    STRINGISE_ENUM_CLASS(Volume)
+    STRINGISE_ENUM_CLASS(VertexBuffer)
+    STRINGISE_ENUM_CLASS(IndexBuffer)
+    STRINGISE_ENUM_CLASS(VertexShader)
+    STRINGISE_ENUM_CLASS(PixelShader)
+    STRINGISE_ENUM_CLASS(VertexDeclaration)
+    STRINGISE_ENUM_CLASS(StateBlock)
+    STRINGISE_ENUM_CLASS(Query)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3D9Chunk
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3D9Chunk &el)
+{
+  RDCCOMPILE_ASSERT((uint32_t)D3D9Chunk::Max == 1082, "Chunks changed without updating names");
+
+  BEGIN_ENUM_STRINGISE(D3D9Chunk)
+  {
+    STRINGISE_ENUM_CLASS_NAMED(DeviceInitialisation, "Internal::DeviceInitialisation");
+    STRINGISE_ENUM_CLASS_NAMED(SetResourceName, "IDirect3DResource9::SetDebugName");
+
+    // Device creation / lifecycle
+    STRINGISE_ENUM_CLASS_NAMED(CreateDevice, "IDirect3D9::CreateDevice");
+    STRINGISE_ENUM_CLASS_NAMED(Reset, "IDirect3DDevice9::Reset");
+
+    // Resource creation
+    STRINGISE_ENUM_CLASS_NAMED(CreateTexture, "IDirect3DDevice9::CreateTexture");
+    STRINGISE_ENUM_CLASS_NAMED(CreateVolumeTexture, "IDirect3DDevice9::CreateVolumeTexture");
+    STRINGISE_ENUM_CLASS_NAMED(CreateCubeTexture, "IDirect3DDevice9::CreateCubeTexture");
+    STRINGISE_ENUM_CLASS_NAMED(CreateVertexBuffer, "IDirect3DDevice9::CreateVertexBuffer");
+    STRINGISE_ENUM_CLASS_NAMED(CreateIndexBuffer, "IDirect3DDevice9::CreateIndexBuffer");
+    STRINGISE_ENUM_CLASS_NAMED(CreateRenderTarget, "IDirect3DDevice9::CreateRenderTarget");
+    STRINGISE_ENUM_CLASS_NAMED(CreateDepthStencilSurface,
+                               "IDirect3DDevice9::CreateDepthStencilSurface");
+    STRINGISE_ENUM_CLASS_NAMED(CreateOffscreenPlainSurface,
+                               "IDirect3DDevice9::CreateOffscreenPlainSurface");
+    STRINGISE_ENUM_CLASS_NAMED(CreateVertexShader, "IDirect3DDevice9::CreateVertexShader");
+    STRINGISE_ENUM_CLASS_NAMED(CreatePixelShader, "IDirect3DDevice9::CreatePixelShader");
+    STRINGISE_ENUM_CLASS_NAMED(CreateVertexDeclaration,
+                               "IDirect3DDevice9::CreateVertexDeclaration");
+    STRINGISE_ENUM_CLASS_NAMED(CreateStateBlock, "IDirect3DDevice9::CreateStateBlock");
+    STRINGISE_ENUM_CLASS_NAMED(CreateQuery, "IDirect3DDevice9::CreateQuery");
+    STRINGISE_ENUM_CLASS_NAMED(CreateAdditionalSwapChain,
+                               "IDirect3DDevice9::CreateAdditionalSwapChain");
+
+    // Draw calls
+    STRINGISE_ENUM_CLASS_NAMED(DrawPrimitive, "IDirect3DDevice9::DrawPrimitive");
+    STRINGISE_ENUM_CLASS_NAMED(DrawIndexedPrimitive, "IDirect3DDevice9::DrawIndexedPrimitive");
+    STRINGISE_ENUM_CLASS_NAMED(DrawPrimitiveUP, "IDirect3DDevice9::DrawPrimitiveUP");
+    STRINGISE_ENUM_CLASS_NAMED(DrawIndexedPrimitiveUP, "IDirect3DDevice9::DrawIndexedPrimitiveUP");
+
+    // Frame / scene
+    STRINGISE_ENUM_CLASS_NAMED(Present, "IDirect3DDevice9::Present");
+    STRINGISE_ENUM_CLASS_NAMED(SwapChainPresent, "IDirect3DSwapChain9::Present");
+    STRINGISE_ENUM_CLASS_NAMED(BeginScene, "IDirect3DDevice9::BeginScene");
+    STRINGISE_ENUM_CLASS_NAMED(EndScene, "IDirect3DDevice9::EndScene");
+    STRINGISE_ENUM_CLASS_NAMED(Clear, "IDirect3DDevice9::Clear");
+
+    // Render state
+    STRINGISE_ENUM_CLASS_NAMED(SetRenderState, "IDirect3DDevice9::SetRenderState");
+    STRINGISE_ENUM_CLASS_NAMED(SetSamplerState, "IDirect3DDevice9::SetSamplerState");
+    STRINGISE_ENUM_CLASS_NAMED(SetTextureStageState, "IDirect3DDevice9::SetTextureStageState");
+    STRINGISE_ENUM_CLASS_NAMED(SetTransform, "IDirect3DDevice9::SetTransform");
+    STRINGISE_ENUM_CLASS_NAMED(SetViewport, "IDirect3DDevice9::SetViewport");
+    STRINGISE_ENUM_CLASS_NAMED(SetScissorRect, "IDirect3DDevice9::SetScissorRect");
+    STRINGISE_ENUM_CLASS_NAMED(SetClipPlane, "IDirect3DDevice9::SetClipPlane");
+    STRINGISE_ENUM_CLASS_NAMED(SetMaterial, "IDirect3DDevice9::SetMaterial");
+    STRINGISE_ENUM_CLASS_NAMED(SetLight, "IDirect3DDevice9::SetLight");
+    STRINGISE_ENUM_CLASS_NAMED(LightEnable, "IDirect3DDevice9::LightEnable");
+    STRINGISE_ENUM_CLASS_NAMED(SetNPatchMode, "IDirect3DDevice9::SetNPatchMode");
+
+    // Shader state
+    STRINGISE_ENUM_CLASS_NAMED(SetVertexShader, "IDirect3DDevice9::SetVertexShader");
+    STRINGISE_ENUM_CLASS_NAMED(SetPixelShader, "IDirect3DDevice9::SetPixelShader");
+    STRINGISE_ENUM_CLASS_NAMED(SetVertexDeclaration, "IDirect3DDevice9::SetVertexDeclaration");
+    STRINGISE_ENUM_CLASS_NAMED(SetFVF, "IDirect3DDevice9::SetFVF");
+    STRINGISE_ENUM_CLASS_NAMED(SetVertexShaderConstantF,
+                               "IDirect3DDevice9::SetVertexShaderConstantF");
+    STRINGISE_ENUM_CLASS_NAMED(SetVertexShaderConstantI,
+                               "IDirect3DDevice9::SetVertexShaderConstantI");
+    STRINGISE_ENUM_CLASS_NAMED(SetVertexShaderConstantB,
+                               "IDirect3DDevice9::SetVertexShaderConstantB");
+    STRINGISE_ENUM_CLASS_NAMED(SetPixelShaderConstantF,
+                               "IDirect3DDevice9::SetPixelShaderConstantF");
+    STRINGISE_ENUM_CLASS_NAMED(SetPixelShaderConstantI,
+                               "IDirect3DDevice9::SetPixelShaderConstantI");
+    STRINGISE_ENUM_CLASS_NAMED(SetPixelShaderConstantB,
+                               "IDirect3DDevice9::SetPixelShaderConstantB");
+
+    // Resource binding
+    STRINGISE_ENUM_CLASS_NAMED(SetTexture, "IDirect3DDevice9::SetTexture");
+    STRINGISE_ENUM_CLASS_NAMED(SetStreamSource, "IDirect3DDevice9::SetStreamSource");
+    STRINGISE_ENUM_CLASS_NAMED(SetStreamSourceFreq, "IDirect3DDevice9::SetStreamSourceFreq");
+    STRINGISE_ENUM_CLASS_NAMED(SetIndices, "IDirect3DDevice9::SetIndices");
+    STRINGISE_ENUM_CLASS_NAMED(SetRenderTarget, "IDirect3DDevice9::SetRenderTarget");
+    STRINGISE_ENUM_CLASS_NAMED(SetDepthStencilSurface, "IDirect3DDevice9::SetDepthStencilSurface");
+
+    // Resource data
+    STRINGISE_ENUM_CLASS_NAMED(LockRect, "IDirect3DSurface9::LockRect");
+    STRINGISE_ENUM_CLASS_NAMED(UnlockRect, "IDirect3DSurface9::UnlockRect");
+    STRINGISE_ENUM_CLASS_NAMED(LockBox, "IDirect3DVolume9::LockBox");
+    STRINGISE_ENUM_CLASS_NAMED(UnlockBox, "IDirect3DVolume9::UnlockBox");
+    STRINGISE_ENUM_CLASS_NAMED(LockVertexBuffer, "IDirect3DVertexBuffer9::Lock");
+    STRINGISE_ENUM_CLASS_NAMED(UnlockVertexBuffer, "IDirect3DVertexBuffer9::Unlock");
+    STRINGISE_ENUM_CLASS_NAMED(LockIndexBuffer, "IDirect3DIndexBuffer9::Lock");
+    STRINGISE_ENUM_CLASS_NAMED(UnlockIndexBuffer, "IDirect3DIndexBuffer9::Unlock");
+    STRINGISE_ENUM_CLASS_NAMED(UpdateSurface, "IDirect3DDevice9::UpdateSurface");
+    STRINGISE_ENUM_CLASS_NAMED(UpdateTexture, "IDirect3DDevice9::UpdateTexture");
+    STRINGISE_ENUM_CLASS_NAMED(StretchRect, "IDirect3DDevice9::StretchRect");
+    STRINGISE_ENUM_CLASS_NAMED(ColorFill, "IDirect3DDevice9::ColorFill");
+    STRINGISE_ENUM_CLASS_NAMED(GetRenderTargetData, "IDirect3DDevice9::GetRenderTargetData");
+    STRINGISE_ENUM_CLASS_NAMED(GetFrontBufferData, "IDirect3DDevice9::GetFrontBufferData");
+
+    // State blocks
+    STRINGISE_ENUM_CLASS_NAMED(BeginStateBlock, "IDirect3DDevice9::BeginStateBlock");
+    STRINGISE_ENUM_CLASS_NAMED(EndStateBlock, "IDirect3DDevice9::EndStateBlock");
+    STRINGISE_ENUM_CLASS_NAMED(StateBlockCapture, "IDirect3DStateBlock9::Capture");
+    STRINGISE_ENUM_CLASS_NAMED(StateBlockApply, "IDirect3DStateBlock9::Apply");
+
+    // Queries
+    STRINGISE_ENUM_CLASS_NAMED(QueryIssue, "IDirect3DQuery9::Issue");
+    STRINGISE_ENUM_CLASS_NAMED(QueryGetData, "IDirect3DQuery9::GetData");
+
+    // Misc
+    STRINGISE_ENUM_CLASS_NAMED(SetSoftwareVertexProcessing,
+                               "IDirect3DDevice9::SetSoftwareVertexProcessing");
+    STRINGISE_ENUM_CLASS_NAMED(SetDialogBoxMode, "IDirect3DDevice9::SetDialogBoxMode");
+    STRINGISE_ENUM_CLASS_NAMED(ValidateDevice, "IDirect3DDevice9::ValidateDevice");
+
+    // Cursor
+    STRINGISE_ENUM_CLASS_NAMED(SetCursorProperties, "IDirect3DDevice9::SetCursorProperties");
+    STRINGISE_ENUM_CLASS_NAMED(SetCursorPosition, "IDirect3DDevice9::SetCursorPosition");
+    STRINGISE_ENUM_CLASS_NAMED(ShowCursor, "IDirect3DDevice9::ShowCursor");
+
+    // N-patch
+    STRINGISE_ENUM_CLASS_NAMED(DrawRectPatch, "IDirect3DDevice9::DrawRectPatch");
+    STRINGISE_ENUM_CLASS_NAMED(DrawTriPatch, "IDirect3DDevice9::DrawTriPatch");
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DFORMAT
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DFORMAT &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DFORMAT);
+  {
+    STRINGISE_ENUM(D3DFMT_UNKNOWN)
+
+    STRINGISE_ENUM(D3DFMT_R8G8B8)
+    STRINGISE_ENUM(D3DFMT_A8R8G8B8)
+    STRINGISE_ENUM(D3DFMT_X8R8G8B8)
+    STRINGISE_ENUM(D3DFMT_R5G6B5)
+    STRINGISE_ENUM(D3DFMT_X1R5G5B5)
+    STRINGISE_ENUM(D3DFMT_A1R5G5B5)
+    STRINGISE_ENUM(D3DFMT_A4R4G4B4)
+    STRINGISE_ENUM(D3DFMT_R3G3B2)
+    STRINGISE_ENUM(D3DFMT_A8)
+    STRINGISE_ENUM(D3DFMT_A8R3G3B2)
+    STRINGISE_ENUM(D3DFMT_X4R4G4B4)
+    STRINGISE_ENUM(D3DFMT_A2B10G10R10)
+    STRINGISE_ENUM(D3DFMT_A8B8G8R8)
+    STRINGISE_ENUM(D3DFMT_X8B8G8R8)
+    STRINGISE_ENUM(D3DFMT_G16R16)
+    STRINGISE_ENUM(D3DFMT_A2R10G10B10)
+    STRINGISE_ENUM(D3DFMT_A16B16G16R16)
+
+    STRINGISE_ENUM(D3DFMT_A8P8)
+    STRINGISE_ENUM(D3DFMT_P8)
+
+    STRINGISE_ENUM(D3DFMT_L8)
+    STRINGISE_ENUM(D3DFMT_A8L8)
+    STRINGISE_ENUM(D3DFMT_A4L4)
+
+    STRINGISE_ENUM(D3DFMT_V8U8)
+    STRINGISE_ENUM(D3DFMT_L6V5U5)
+    STRINGISE_ENUM(D3DFMT_X8L8V8U8)
+    STRINGISE_ENUM(D3DFMT_Q8W8V8U8)
+    STRINGISE_ENUM(D3DFMT_V16U16)
+    STRINGISE_ENUM(D3DFMT_A2W10V10U10)
+
+    STRINGISE_ENUM(D3DFMT_UYVY)
+    STRINGISE_ENUM(D3DFMT_R8G8_B8G8)
+    STRINGISE_ENUM(D3DFMT_YUY2)
+    STRINGISE_ENUM(D3DFMT_G8R8_G8B8)
+    STRINGISE_ENUM(D3DFMT_DXT1)
+    STRINGISE_ENUM(D3DFMT_DXT2)
+    STRINGISE_ENUM(D3DFMT_DXT3)
+    STRINGISE_ENUM(D3DFMT_DXT4)
+    STRINGISE_ENUM(D3DFMT_DXT5)
+
+    STRINGISE_ENUM(D3DFMT_D16_LOCKABLE)
+    STRINGISE_ENUM(D3DFMT_D32)
+    STRINGISE_ENUM(D3DFMT_D15S1)
+    STRINGISE_ENUM(D3DFMT_D24S8)
+    STRINGISE_ENUM(D3DFMT_D24X8)
+    STRINGISE_ENUM(D3DFMT_D24X4S4)
+    STRINGISE_ENUM(D3DFMT_D16)
+
+    STRINGISE_ENUM(D3DFMT_D32F_LOCKABLE)
+    STRINGISE_ENUM(D3DFMT_D24FS8)
+
+    STRINGISE_ENUM(D3DFMT_D32_LOCKABLE)
+    STRINGISE_ENUM(D3DFMT_S8_LOCKABLE)
+
+    STRINGISE_ENUM(D3DFMT_L16)
+
+    STRINGISE_ENUM(D3DFMT_VERTEXDATA)
+    STRINGISE_ENUM(D3DFMT_INDEX16)
+    STRINGISE_ENUM(D3DFMT_INDEX32)
+
+    STRINGISE_ENUM(D3DFMT_Q16W16V16U16)
+
+    STRINGISE_ENUM(D3DFMT_MULTI2_ARGB8)
+
+    STRINGISE_ENUM(D3DFMT_R16F)
+    STRINGISE_ENUM(D3DFMT_G16R16F)
+    STRINGISE_ENUM(D3DFMT_A16B16G16R16F)
+
+    STRINGISE_ENUM(D3DFMT_R32F)
+    STRINGISE_ENUM(D3DFMT_G32R32F)
+    STRINGISE_ENUM(D3DFMT_A32B32G32R32F)
+
+    STRINGISE_ENUM(D3DFMT_CxV8U8)
+
+    STRINGISE_ENUM(D3DFMT_A1)
+    STRINGISE_ENUM(D3DFMT_A2B10G10R10_XR_BIAS)
+    STRINGISE_ENUM(D3DFMT_BINARYBUFFER)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DPOOL
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DPOOL &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DPOOL);
+  {
+    STRINGISE_ENUM(D3DPOOL_DEFAULT)
+    STRINGISE_ENUM(D3DPOOL_MANAGED)
+    STRINGISE_ENUM(D3DPOOL_SYSTEMMEM)
+    STRINGISE_ENUM(D3DPOOL_SCRATCH)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DPRIMITIVETYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DPRIMITIVETYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DPRIMITIVETYPE);
+  {
+    STRINGISE_ENUM(D3DPT_POINTLIST)
+    STRINGISE_ENUM(D3DPT_LINELIST)
+    STRINGISE_ENUM(D3DPT_LINESTRIP)
+    STRINGISE_ENUM(D3DPT_TRIANGLELIST)
+    STRINGISE_ENUM(D3DPT_TRIANGLESTRIP)
+    STRINGISE_ENUM(D3DPT_TRIANGLEFAN)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DRENDERSTATETYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DRENDERSTATETYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DRENDERSTATETYPE);
+  {
+    STRINGISE_ENUM(D3DRS_ZENABLE)
+    STRINGISE_ENUM(D3DRS_FILLMODE)
+    STRINGISE_ENUM(D3DRS_SHADEMODE)
+    STRINGISE_ENUM(D3DRS_ZWRITEENABLE)
+    STRINGISE_ENUM(D3DRS_ALPHATESTENABLE)
+    STRINGISE_ENUM(D3DRS_LASTPIXEL)
+    STRINGISE_ENUM(D3DRS_SRCBLEND)
+    STRINGISE_ENUM(D3DRS_DESTBLEND)
+    STRINGISE_ENUM(D3DRS_CULLMODE)
+    STRINGISE_ENUM(D3DRS_ZFUNC)
+    STRINGISE_ENUM(D3DRS_ALPHAREF)
+    STRINGISE_ENUM(D3DRS_ALPHAFUNC)
+    STRINGISE_ENUM(D3DRS_DITHERENABLE)
+    STRINGISE_ENUM(D3DRS_ALPHABLENDENABLE)
+    STRINGISE_ENUM(D3DRS_FOGENABLE)
+    STRINGISE_ENUM(D3DRS_SPECULARENABLE)
+    STRINGISE_ENUM(D3DRS_FOGCOLOR)
+    STRINGISE_ENUM(D3DRS_FOGTABLEMODE)
+    STRINGISE_ENUM(D3DRS_FOGSTART)
+    STRINGISE_ENUM(D3DRS_FOGEND)
+    STRINGISE_ENUM(D3DRS_FOGDENSITY)
+    STRINGISE_ENUM(D3DRS_RANGEFOGENABLE)
+    STRINGISE_ENUM(D3DRS_STENCILENABLE)
+    STRINGISE_ENUM(D3DRS_STENCILFAIL)
+    STRINGISE_ENUM(D3DRS_STENCILZFAIL)
+    STRINGISE_ENUM(D3DRS_STENCILPASS)
+    STRINGISE_ENUM(D3DRS_STENCILFUNC)
+    STRINGISE_ENUM(D3DRS_STENCILREF)
+    STRINGISE_ENUM(D3DRS_STENCILMASK)
+    STRINGISE_ENUM(D3DRS_STENCILWRITEMASK)
+    STRINGISE_ENUM(D3DRS_TEXTUREFACTOR)
+    STRINGISE_ENUM(D3DRS_WRAP0)
+    STRINGISE_ENUM(D3DRS_WRAP1)
+    STRINGISE_ENUM(D3DRS_WRAP2)
+    STRINGISE_ENUM(D3DRS_WRAP3)
+    STRINGISE_ENUM(D3DRS_WRAP4)
+    STRINGISE_ENUM(D3DRS_WRAP5)
+    STRINGISE_ENUM(D3DRS_WRAP6)
+    STRINGISE_ENUM(D3DRS_WRAP7)
+    STRINGISE_ENUM(D3DRS_CLIPPING)
+    STRINGISE_ENUM(D3DRS_LIGHTING)
+    STRINGISE_ENUM(D3DRS_AMBIENT)
+    STRINGISE_ENUM(D3DRS_FOGVERTEXMODE)
+    STRINGISE_ENUM(D3DRS_COLORVERTEX)
+    STRINGISE_ENUM(D3DRS_LOCALVIEWER)
+    STRINGISE_ENUM(D3DRS_NORMALIZENORMALS)
+    STRINGISE_ENUM(D3DRS_DIFFUSEMATERIALSOURCE)
+    STRINGISE_ENUM(D3DRS_SPECULARMATERIALSOURCE)
+    STRINGISE_ENUM(D3DRS_AMBIENTMATERIALSOURCE)
+    STRINGISE_ENUM(D3DRS_EMISSIVEMATERIALSOURCE)
+    STRINGISE_ENUM(D3DRS_VERTEXBLEND)
+    STRINGISE_ENUM(D3DRS_CLIPPLANEENABLE)
+    STRINGISE_ENUM(D3DRS_POINTSIZE)
+    STRINGISE_ENUM(D3DRS_POINTSIZE_MIN)
+    STRINGISE_ENUM(D3DRS_POINTSPRITEENABLE)
+    STRINGISE_ENUM(D3DRS_POINTSCALEENABLE)
+    STRINGISE_ENUM(D3DRS_POINTSCALE_A)
+    STRINGISE_ENUM(D3DRS_POINTSCALE_B)
+    STRINGISE_ENUM(D3DRS_POINTSCALE_C)
+    STRINGISE_ENUM(D3DRS_MULTISAMPLEANTIALIAS)
+    STRINGISE_ENUM(D3DRS_MULTISAMPLEMASK)
+    STRINGISE_ENUM(D3DRS_PATCHEDGESTYLE)
+    STRINGISE_ENUM(D3DRS_DEBUGMONITORTOKEN)
+    STRINGISE_ENUM(D3DRS_POINTSIZE_MAX)
+    STRINGISE_ENUM(D3DRS_INDEXEDVERTEXBLENDENABLE)
+    STRINGISE_ENUM(D3DRS_COLORWRITEENABLE)
+    STRINGISE_ENUM(D3DRS_TWEENFACTOR)
+    STRINGISE_ENUM(D3DRS_BLENDOP)
+    STRINGISE_ENUM(D3DRS_POSITIONDEGREE)
+    STRINGISE_ENUM(D3DRS_NORMALDEGREE)
+    STRINGISE_ENUM(D3DRS_SCISSORTESTENABLE)
+    STRINGISE_ENUM(D3DRS_SLOPESCALEDEPTHBIAS)
+    STRINGISE_ENUM(D3DRS_ANTIALIASEDLINEENABLE)
+    STRINGISE_ENUM(D3DRS_MINTESSELLATIONLEVEL)
+    STRINGISE_ENUM(D3DRS_MAXTESSELLATIONLEVEL)
+    STRINGISE_ENUM(D3DRS_ADAPTIVETESS_X)
+    STRINGISE_ENUM(D3DRS_ADAPTIVETESS_Y)
+    STRINGISE_ENUM(D3DRS_ADAPTIVETESS_Z)
+    STRINGISE_ENUM(D3DRS_ADAPTIVETESS_W)
+    STRINGISE_ENUM(D3DRS_ENABLEADAPTIVETESSELLATION)
+    STRINGISE_ENUM(D3DRS_TWOSIDEDSTENCILMODE)
+    STRINGISE_ENUM(D3DRS_CCW_STENCILFAIL)
+    STRINGISE_ENUM(D3DRS_CCW_STENCILZFAIL)
+    STRINGISE_ENUM(D3DRS_CCW_STENCILPASS)
+    STRINGISE_ENUM(D3DRS_CCW_STENCILFUNC)
+    STRINGISE_ENUM(D3DRS_COLORWRITEENABLE1)
+    STRINGISE_ENUM(D3DRS_COLORWRITEENABLE2)
+    STRINGISE_ENUM(D3DRS_COLORWRITEENABLE3)
+    STRINGISE_ENUM(D3DRS_BLENDFACTOR)
+    STRINGISE_ENUM(D3DRS_SRGBWRITEENABLE)
+    STRINGISE_ENUM(D3DRS_DEPTHBIAS)
+    STRINGISE_ENUM(D3DRS_WRAP8)
+    STRINGISE_ENUM(D3DRS_WRAP9)
+    STRINGISE_ENUM(D3DRS_WRAP10)
+    STRINGISE_ENUM(D3DRS_WRAP11)
+    STRINGISE_ENUM(D3DRS_WRAP12)
+    STRINGISE_ENUM(D3DRS_WRAP13)
+    STRINGISE_ENUM(D3DRS_WRAP14)
+    STRINGISE_ENUM(D3DRS_WRAP15)
+    STRINGISE_ENUM(D3DRS_SEPARATEALPHABLENDENABLE)
+    STRINGISE_ENUM(D3DRS_SRCBLENDALPHA)
+    STRINGISE_ENUM(D3DRS_DESTBLENDALPHA)
+    STRINGISE_ENUM(D3DRS_BLENDOPALPHA)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DTEXTURESTAGESTATETYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DTEXTURESTAGESTATETYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DTEXTURESTAGESTATETYPE);
+  {
+    STRINGISE_ENUM(D3DTSS_COLOROP)
+    STRINGISE_ENUM(D3DTSS_COLORARG1)
+    STRINGISE_ENUM(D3DTSS_COLORARG2)
+    STRINGISE_ENUM(D3DTSS_ALPHAOP)
+    STRINGISE_ENUM(D3DTSS_ALPHAARG1)
+    STRINGISE_ENUM(D3DTSS_ALPHAARG2)
+    STRINGISE_ENUM(D3DTSS_BUMPENVMAT00)
+    STRINGISE_ENUM(D3DTSS_BUMPENVMAT01)
+    STRINGISE_ENUM(D3DTSS_BUMPENVMAT10)
+    STRINGISE_ENUM(D3DTSS_BUMPENVMAT11)
+    STRINGISE_ENUM(D3DTSS_TEXCOORDINDEX)
+    STRINGISE_ENUM(D3DTSS_BUMPENVLSCALE)
+    STRINGISE_ENUM(D3DTSS_BUMPENVLOFFSET)
+    STRINGISE_ENUM(D3DTSS_TEXTURETRANSFORMFLAGS)
+    STRINGISE_ENUM(D3DTSS_COLORARG0)
+    STRINGISE_ENUM(D3DTSS_ALPHAARG0)
+    STRINGISE_ENUM(D3DTSS_RESULTARG)
+    STRINGISE_ENUM(D3DTSS_CONSTANT)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DSAMPLERSTATETYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DSAMPLERSTATETYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DSAMPLERSTATETYPE);
+  {
+    STRINGISE_ENUM(D3DSAMP_ADDRESSU)
+    STRINGISE_ENUM(D3DSAMP_ADDRESSV)
+    STRINGISE_ENUM(D3DSAMP_ADDRESSW)
+    STRINGISE_ENUM(D3DSAMP_BORDERCOLOR)
+    STRINGISE_ENUM(D3DSAMP_MAGFILTER)
+    STRINGISE_ENUM(D3DSAMP_MINFILTER)
+    STRINGISE_ENUM(D3DSAMP_MIPFILTER)
+    STRINGISE_ENUM(D3DSAMP_MIPMAPLODBIAS)
+    STRINGISE_ENUM(D3DSAMP_MAXMIPLEVEL)
+    STRINGISE_ENUM(D3DSAMP_MAXANISOTROPY)
+    STRINGISE_ENUM(D3DSAMP_SRGBTEXTURE)
+    STRINGISE_ENUM(D3DSAMP_ELEMENTINDEX)
+    STRINGISE_ENUM(D3DSAMP_DMAPOFFSET)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DTRANSFORMSTATETYPE
+/////////////////////////////////////////////////////////////////////////////
+
+// D3DTS_WORLD etc. are macro-defined as (D3DTRANSFORMSTATETYPE)(index + 256),
+// which are not formal enumerators.  Suppress C4063 for these cases.
+#pragma warning(push)
+#pragma warning(disable : 4063)
+template <>
+rdcstr DoStringise(const D3DTRANSFORMSTATETYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DTRANSFORMSTATETYPE);
+  {
+    STRINGISE_ENUM(D3DTS_VIEW)
+    STRINGISE_ENUM(D3DTS_PROJECTION)
+    STRINGISE_ENUM(D3DTS_TEXTURE0)
+    STRINGISE_ENUM(D3DTS_TEXTURE1)
+    STRINGISE_ENUM(D3DTS_TEXTURE2)
+    STRINGISE_ENUM(D3DTS_TEXTURE3)
+    STRINGISE_ENUM(D3DTS_TEXTURE4)
+    STRINGISE_ENUM(D3DTS_TEXTURE5)
+    STRINGISE_ENUM(D3DTS_TEXTURE6)
+    STRINGISE_ENUM(D3DTS_TEXTURE7)
+    STRINGISE_ENUM_NAMED(D3DTS_WORLD, "D3DTS_WORLD")
+    STRINGISE_ENUM_NAMED(D3DTS_WORLD1, "D3DTS_WORLD1")
+    STRINGISE_ENUM_NAMED(D3DTS_WORLD2, "D3DTS_WORLD2")
+    STRINGISE_ENUM_NAMED(D3DTS_WORLD3, "D3DTS_WORLD3")
+  }
+  END_ENUM_STRINGISE();
+}
+#pragma warning(pop)
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DSTATEBLOCKTYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DSTATEBLOCKTYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DSTATEBLOCKTYPE);
+  {
+    STRINGISE_ENUM(D3DSBT_ALL)
+    STRINGISE_ENUM(D3DSBT_PIXELSTATE)
+    STRINGISE_ENUM(D3DSBT_VERTEXSTATE)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DQUERYTYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DQUERYTYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DQUERYTYPE);
+  {
+    STRINGISE_ENUM(D3DQUERYTYPE_VCACHE)
+    STRINGISE_ENUM(D3DQUERYTYPE_RESOURCEMANAGER)
+    STRINGISE_ENUM(D3DQUERYTYPE_VERTEXSTATS)
+    STRINGISE_ENUM(D3DQUERYTYPE_EVENT)
+    STRINGISE_ENUM(D3DQUERYTYPE_OCCLUSION)
+    STRINGISE_ENUM(D3DQUERYTYPE_TIMESTAMP)
+    STRINGISE_ENUM(D3DQUERYTYPE_TIMESTAMPDISJOINT)
+    STRINGISE_ENUM(D3DQUERYTYPE_TIMESTAMPFREQ)
+    STRINGISE_ENUM(D3DQUERYTYPE_PIPELINETIMINGS)
+    STRINGISE_ENUM(D3DQUERYTYPE_INTERFACETIMINGS)
+    STRINGISE_ENUM(D3DQUERYTYPE_VERTEXTIMINGS)
+    STRINGISE_ENUM(D3DQUERYTYPE_PIXELTIMINGS)
+    STRINGISE_ENUM(D3DQUERYTYPE_BANDWIDTHTIMINGS)
+    STRINGISE_ENUM(D3DQUERYTYPE_CACHEUTILIZATION)
+    STRINGISE_ENUM(D3DQUERYTYPE_MEMORYPRESSURE)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DBLEND
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DBLEND &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DBLEND);
+  {
+    STRINGISE_ENUM(D3DBLEND_ZERO)
+    STRINGISE_ENUM(D3DBLEND_ONE)
+    STRINGISE_ENUM(D3DBLEND_SRCCOLOR)
+    STRINGISE_ENUM(D3DBLEND_INVSRCCOLOR)
+    STRINGISE_ENUM(D3DBLEND_SRCALPHA)
+    STRINGISE_ENUM(D3DBLEND_INVSRCALPHA)
+    STRINGISE_ENUM(D3DBLEND_DESTALPHA)
+    STRINGISE_ENUM(D3DBLEND_INVDESTALPHA)
+    STRINGISE_ENUM(D3DBLEND_DESTCOLOR)
+    STRINGISE_ENUM(D3DBLEND_INVDESTCOLOR)
+    STRINGISE_ENUM(D3DBLEND_SRCALPHASAT)
+    STRINGISE_ENUM(D3DBLEND_BOTHSRCALPHA)
+    STRINGISE_ENUM(D3DBLEND_BOTHINVSRCALPHA)
+    STRINGISE_ENUM(D3DBLEND_BLENDFACTOR)
+    STRINGISE_ENUM(D3DBLEND_INVBLENDFACTOR)
+    STRINGISE_ENUM(D3DBLEND_SRCCOLOR2)
+    STRINGISE_ENUM(D3DBLEND_INVSRCCOLOR2)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DCMPFUNC
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DCMPFUNC &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DCMPFUNC);
+  {
+    STRINGISE_ENUM(D3DCMP_NEVER)
+    STRINGISE_ENUM(D3DCMP_LESS)
+    STRINGISE_ENUM(D3DCMP_EQUAL)
+    STRINGISE_ENUM(D3DCMP_LESSEQUAL)
+    STRINGISE_ENUM(D3DCMP_GREATER)
+    STRINGISE_ENUM(D3DCMP_NOTEQUAL)
+    STRINGISE_ENUM(D3DCMP_GREATEREQUAL)
+    STRINGISE_ENUM(D3DCMP_ALWAYS)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DSTENCILOP
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DSTENCILOP &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DSTENCILOP);
+  {
+    STRINGISE_ENUM(D3DSTENCILOP_KEEP)
+    STRINGISE_ENUM(D3DSTENCILOP_ZERO)
+    STRINGISE_ENUM(D3DSTENCILOP_REPLACE)
+    STRINGISE_ENUM(D3DSTENCILOP_INCRSAT)
+    STRINGISE_ENUM(D3DSTENCILOP_DECRSAT)
+    STRINGISE_ENUM(D3DSTENCILOP_INVERT)
+    STRINGISE_ENUM(D3DSTENCILOP_INCR)
+    STRINGISE_ENUM(D3DSTENCILOP_DECR)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DFILLMODE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DFILLMODE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DFILLMODE);
+  {
+    STRINGISE_ENUM(D3DFILL_POINT)
+    STRINGISE_ENUM(D3DFILL_WIREFRAME)
+    STRINGISE_ENUM(D3DFILL_SOLID)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DCULL
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DCULL &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DCULL);
+  {
+    STRINGISE_ENUM(D3DCULL_NONE)
+    STRINGISE_ENUM(D3DCULL_CW)
+    STRINGISE_ENUM(D3DCULL_CCW)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DBLENDOP
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DBLENDOP &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DBLENDOP);
+  {
+    STRINGISE_ENUM(D3DBLENDOP_ADD)
+    STRINGISE_ENUM(D3DBLENDOP_SUBTRACT)
+    STRINGISE_ENUM(D3DBLENDOP_REVSUBTRACT)
+    STRINGISE_ENUM(D3DBLENDOP_MIN)
+    STRINGISE_ENUM(D3DBLENDOP_MAX)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DSWAPEFFECT
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DSWAPEFFECT &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DSWAPEFFECT);
+  {
+    STRINGISE_ENUM(D3DSWAPEFFECT_DISCARD)
+    STRINGISE_ENUM(D3DSWAPEFFECT_FLIP)
+    STRINGISE_ENUM(D3DSWAPEFFECT_COPY)
+    STRINGISE_ENUM(D3DSWAPEFFECT_OVERLAY)
+    STRINGISE_ENUM(D3DSWAPEFFECT_FLIPEX)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DMULTISAMPLE_TYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DMULTISAMPLE_TYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DMULTISAMPLE_TYPE);
+  {
+    STRINGISE_ENUM(D3DMULTISAMPLE_NONE)
+    STRINGISE_ENUM(D3DMULTISAMPLE_NONMASKABLE)
+    STRINGISE_ENUM(D3DMULTISAMPLE_2_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_3_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_4_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_5_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_6_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_7_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_8_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_9_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_10_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_11_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_12_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_13_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_14_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_15_SAMPLES)
+    STRINGISE_ENUM(D3DMULTISAMPLE_16_SAMPLES)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DTEXTUREFILTERTYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DTEXTUREFILTERTYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DTEXTUREFILTERTYPE);
+  {
+    STRINGISE_ENUM(D3DTEXF_NONE)
+    STRINGISE_ENUM(D3DTEXF_POINT)
+    STRINGISE_ENUM(D3DTEXF_LINEAR)
+    STRINGISE_ENUM(D3DTEXF_ANISOTROPIC)
+    STRINGISE_ENUM(D3DTEXF_PYRAMIDALQUAD)
+    STRINGISE_ENUM(D3DTEXF_GAUSSIANQUAD)
+    STRINGISE_ENUM(D3DTEXF_CONVOLUTIONMONO)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DDEVTYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DDEVTYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DDEVTYPE);
+  {
+    STRINGISE_ENUM(D3DDEVTYPE_HAL)
+    STRINGISE_ENUM(D3DDEVTYPE_REF)
+    STRINGISE_ENUM(D3DDEVTYPE_SW)
+    STRINGISE_ENUM(D3DDEVTYPE_NULLREF)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DLIGHTTYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DLIGHTTYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DLIGHTTYPE);
+  {
+    STRINGISE_ENUM(D3DLIGHT_POINT)
+    STRINGISE_ENUM(D3DLIGHT_SPOT)
+    STRINGISE_ENUM(D3DLIGHT_DIRECTIONAL)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DTEXTUREOP
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DTEXTUREOP &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DTEXTUREOP);
+  {
+    STRINGISE_ENUM(D3DTOP_DISABLE)
+    STRINGISE_ENUM(D3DTOP_SELECTARG1)
+    STRINGISE_ENUM(D3DTOP_SELECTARG2)
+    STRINGISE_ENUM(D3DTOP_MODULATE)
+    STRINGISE_ENUM(D3DTOP_MODULATE2X)
+    STRINGISE_ENUM(D3DTOP_MODULATE4X)
+    STRINGISE_ENUM(D3DTOP_ADD)
+    STRINGISE_ENUM(D3DTOP_ADDSIGNED)
+    STRINGISE_ENUM(D3DTOP_ADDSIGNED2X)
+    STRINGISE_ENUM(D3DTOP_SUBTRACT)
+    STRINGISE_ENUM(D3DTOP_ADDSMOOTH)
+    STRINGISE_ENUM(D3DTOP_BLENDDIFFUSEALPHA)
+    STRINGISE_ENUM(D3DTOP_BLENDTEXTUREALPHA)
+    STRINGISE_ENUM(D3DTOP_BLENDFACTORALPHA)
+    STRINGISE_ENUM(D3DTOP_BLENDTEXTUREALPHAPM)
+    STRINGISE_ENUM(D3DTOP_BLENDCURRENTALPHA)
+    STRINGISE_ENUM(D3DTOP_PREMODULATE)
+    STRINGISE_ENUM(D3DTOP_MODULATEALPHA_ADDCOLOR)
+    STRINGISE_ENUM(D3DTOP_MODULATECOLOR_ADDALPHA)
+    STRINGISE_ENUM(D3DTOP_MODULATEINVALPHA_ADDCOLOR)
+    STRINGISE_ENUM(D3DTOP_MODULATEINVCOLOR_ADDALPHA)
+    STRINGISE_ENUM(D3DTOP_BUMPENVMAP)
+    STRINGISE_ENUM(D3DTOP_BUMPENVMAPLUMINANCE)
+    STRINGISE_ENUM(D3DTOP_DOTPRODUCT3)
+    STRINGISE_ENUM(D3DTOP_MULTIPLYADD)
+    STRINGISE_ENUM(D3DTOP_LERP)
+  }
+  END_ENUM_STRINGISE();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// D3DRESOURCETYPE
+/////////////////////////////////////////////////////////////////////////////
+
+template <>
+rdcstr DoStringise(const D3DRESOURCETYPE &el)
+{
+  BEGIN_ENUM_STRINGISE(D3DRESOURCETYPE);
+  {
+    STRINGISE_ENUM(D3DRTYPE_SURFACE)
+    STRINGISE_ENUM(D3DRTYPE_VOLUME)
+    STRINGISE_ENUM(D3DRTYPE_TEXTURE)
+    STRINGISE_ENUM(D3DRTYPE_VOLUMETEXTURE)
+    STRINGISE_ENUM(D3DRTYPE_CUBETEXTURE)
+    STRINGISE_ENUM(D3DRTYPE_VERTEXBUFFER)
+    STRINGISE_ENUM(D3DRTYPE_INDEXBUFFER)
+  }
+  END_ENUM_STRINGISE();
+}

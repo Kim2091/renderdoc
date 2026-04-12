@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <set>
 #include <stdint.h>
 #include "common/threading.h"
 #include "common/timing.h"
@@ -79,6 +80,7 @@ private:
 
   SDFile *m_StructuredFile;
   SDFile *m_StoredStructuredData;
+  std::set<rdcstr> m_StringDB;
 
   uint64_t m_SectionVersion;
 
