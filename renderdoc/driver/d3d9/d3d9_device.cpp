@@ -538,7 +538,14 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetCreationParameters(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetCursorProperties(
     UINT XHotSpot, UINT YHotSpot, IDirect3DSurface9 *pCursorBitmap)
 {
-  return m_pDevice->SetCursorProperties(XHotSpot, YHotSpot, pCursorBitmap);
+  IDirect3DSurface9 *realSurf = pCursorBitmap;
+  if(pCursorBitmap)
+  {
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pCursorBitmap);
+    if(info)
+      realSurf = (IDirect3DSurface9 *)info->realObject;
+  }
+  return m_pDevice->SetCursorProperties(XHotSpot, YHotSpot, realSurf);
 }
 
 void STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetCursorPosition(int X, int Y, DWORD Flags)
@@ -633,7 +640,33 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Present(CONST RECT *pSourceRe
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetBackBuffer(
     UINT iSwapChain, UINT iBackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface9 **ppBackBuffer)
 {
-  return m_pDevice->GetBackBuffer(iSwapChain, iBackBuffer, Type, ppBackBuffer);
+  if(ppBackBuffer == NULL)
+    return D3DERR_INVALIDCALL;
+
+  IDirect3DSurface9 *realSurface = NULL;
+  HRESULT ret = m_pDevice->GetBackBuffer(iSwapChain, iBackBuffer, Type, &realSurface);
+
+  if(SUCCEEDED(ret) && realSurface)
+  {
+    if(GetResourceManager()->HasWrapper(realSurface))
+    {
+      IUnknown *existing = GetResourceManager()->GetWrapper(realSurface);
+      *ppBackBuffer = (IDirect3DSurface9 *)existing;
+      (*ppBackBuffer)->AddRef();
+      realSurface->Release();
+    }
+    else
+    {
+      WrappedIDirect3DSurface9 *wrapped = new WrappedIDirect3DSurface9(realSurface, this);
+      *ppBackBuffer = wrapped;
+    }
+  }
+  else
+  {
+    *ppBackBuffer = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetRasterStatus(
@@ -977,15 +1010,15 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::UpdateSurface(
   IDirect3DSurface9 *realDst = pDestinationSurface;
   if(pSourceSurface)
   {
-    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pSourceSurface);
-    if(w)
-      realSrc = w->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pSourceSurface);
+    if(info)
+      realSrc = (IDirect3DSurface9 *)info->realObject;
   }
   if(pDestinationSurface)
   {
-    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pDestinationSurface);
-    if(w)
-      realDst = w->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pDestinationSurface);
+    if(info)
+      realDst = (IDirect3DSurface9 *)info->realObject;
   }
 
   HRESULT ret;
@@ -1014,25 +1047,15 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::UpdateTexture(
   IDirect3DBaseTexture9 *realDst = pDestinationTexture;
   if(pSourceTexture)
   {
-    if(WrappedIDirect3DTexture9 *tex = dynamic_cast<WrappedIDirect3DTexture9 *>(pSourceTexture))
-      realSrc = tex->GetReal();
-    else if(WrappedIDirect3DCubeTexture9 *cube =
-                dynamic_cast<WrappedIDirect3DCubeTexture9 *>(pSourceTexture))
-      realSrc = cube->GetReal();
-    else if(WrappedIDirect3DVolumeTexture9 *vol =
-                dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(pSourceTexture))
-      realSrc = vol->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pSourceTexture);
+    if(info)
+      realSrc = (IDirect3DBaseTexture9 *)info->realObject;
   }
   if(pDestinationTexture)
   {
-    if(WrappedIDirect3DTexture9 *tex = dynamic_cast<WrappedIDirect3DTexture9 *>(pDestinationTexture))
-      realDst = tex->GetReal();
-    else if(WrappedIDirect3DCubeTexture9 *cube =
-                dynamic_cast<WrappedIDirect3DCubeTexture9 *>(pDestinationTexture))
-      realDst = cube->GetReal();
-    else if(WrappedIDirect3DVolumeTexture9 *vol =
-                dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(pDestinationTexture))
-      realDst = vol->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pDestinationTexture);
+    if(info)
+      realDst = (IDirect3DBaseTexture9 *)info->realObject;
   }
 
   HRESULT ret;
@@ -1061,15 +1084,15 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetRenderTargetData(
   IDirect3DSurface9 *realDst = pDestSurface;
   if(pRenderTarget)
   {
-    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pRenderTarget);
-    if(w)
-      realRT = w->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pRenderTarget);
+    if(info)
+      realRT = (IDirect3DSurface9 *)info->realObject;
   }
   if(pDestSurface)
   {
-    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pDestSurface);
-    if(w)
-      realDst = w->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pDestSurface);
+    if(info)
+      realDst = (IDirect3DSurface9 *)info->realObject;
   }
 
   HRESULT ret;
@@ -1097,9 +1120,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetFrontBufferData(
   IDirect3DSurface9 *realDst = pDestSurface;
   if(pDestSurface)
   {
-    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pDestSurface);
-    if(w)
-      realDst = w->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pDestSurface);
+    if(info)
+      realDst = (IDirect3DSurface9 *)info->realObject;
   }
 
   HRESULT ret;
@@ -1127,15 +1150,15 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::StretchRect(
   IDirect3DSurface9 *realDst = pDestSurface;
   if(pSourceSurface)
   {
-    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pSourceSurface);
-    if(w)
-      realSrc = w->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pSourceSurface);
+    if(info)
+      realSrc = (IDirect3DSurface9 *)info->realObject;
   }
   if(pDestSurface)
   {
-    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pDestSurface);
-    if(w)
-      realDst = w->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pDestSurface);
+    if(info)
+      realDst = (IDirect3DSurface9 *)info->realObject;
   }
 
   HRESULT ret;
@@ -1164,9 +1187,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::ColorFill(IDirect3DSurface9 *
   IDirect3DSurface9 *realSurf = pSurface;
   if(pSurface)
   {
-    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pSurface);
-    if(w)
-      realSurf = w->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pSurface);
+    if(info)
+      realSurf = (IDirect3DSurface9 *)info->realObject;
   }
 
   HRESULT ret;
@@ -1235,8 +1258,18 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateOffscreenPlainSurface(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetRenderTarget(
     DWORD RenderTargetIndex, IDirect3DSurface9 *pRenderTarget)
 {
+  IDirect3DSurface9 *realSurf = NULL;
+  if(pRenderTarget)
+  {
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pRenderTarget);
+    if(info)
+      realSurf = (IDirect3DSurface9 *)info->realObject;
+    else
+      realSurf = pRenderTarget;
+  }
+
   HRESULT ret;
-  SERIALISE_TIME_CALL(ret = m_pDevice->SetRenderTarget(RenderTargetIndex, pRenderTarget));
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetRenderTarget(RenderTargetIndex, realSurf));
 
   if(IsActiveCapturing(m_State))
   {
@@ -1252,15 +1285,50 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetRenderTarget(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetRenderTarget(
     DWORD RenderTargetIndex, IDirect3DSurface9 **ppRenderTarget)
 {
-  // TODO: return wrapped surface
-  return m_pDevice->GetRenderTarget(RenderTargetIndex, ppRenderTarget);
+  if(ppRenderTarget == NULL)
+    return D3DERR_INVALIDCALL;
+
+  IDirect3DSurface9 *real = NULL;
+  HRESULT ret = m_pDevice->GetRenderTarget(RenderTargetIndex, &real);
+
+  if(SUCCEEDED(ret) && real)
+  {
+    if(GetResourceManager()->HasWrapper(real))
+    {
+      IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
+      *ppRenderTarget = (IDirect3DSurface9 *)wrapper;
+      (*ppRenderTarget)->AddRef();
+      real->Release();
+    }
+    else
+    {
+      WrappedIDirect3DSurface9 *wrapped = new WrappedIDirect3DSurface9(real, this);
+      *ppRenderTarget = wrapped;
+    }
+  }
+  else
+  {
+    *ppRenderTarget = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetDepthStencilSurface(
     IDirect3DSurface9 *pNewZStencil)
 {
+  IDirect3DSurface9 *realSurf = NULL;
+  if(pNewZStencil)
+  {
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pNewZStencil);
+    if(info)
+      realSurf = (IDirect3DSurface9 *)info->realObject;
+    else
+      realSurf = pNewZStencil;
+  }
+
   HRESULT ret;
-  SERIALISE_TIME_CALL(ret = m_pDevice->SetDepthStencilSurface(pNewZStencil));
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetDepthStencilSurface(realSurf));
 
   if(IsActiveCapturing(m_State))
   {
@@ -1276,8 +1344,33 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetDepthStencilSurface(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetDepthStencilSurface(
     IDirect3DSurface9 **ppZStencilSurface)
 {
-  // TODO: return wrapped surface
-  return m_pDevice->GetDepthStencilSurface(ppZStencilSurface);
+  if(ppZStencilSurface == NULL)
+    return D3DERR_INVALIDCALL;
+
+  IDirect3DSurface9 *real = NULL;
+  HRESULT ret = m_pDevice->GetDepthStencilSurface(&real);
+
+  if(SUCCEEDED(ret) && real)
+  {
+    if(GetResourceManager()->HasWrapper(real))
+    {
+      IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
+      *ppZStencilSurface = (IDirect3DSurface9 *)wrapper;
+      (*ppZStencilSurface)->AddRef();
+      real->Release();
+    }
+    else
+    {
+      WrappedIDirect3DSurface9 *wrapped = new WrappedIDirect3DSurface9(real, this);
+      *ppZStencilSurface = wrapped;
+    }
+  }
+  else
+  {
+    *ppZStencilSurface = NULL;
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1698,15 +1791,49 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetClipStatus(D3DCLIPSTATUS9 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetTexture(DWORD Stage,
                                                                IDirect3DBaseTexture9 **ppTexture)
 {
-  // TODO: return wrapped texture
-  return m_pDevice->GetTexture(Stage, ppTexture);
+  if(ppTexture == NULL)
+    return D3DERR_INVALIDCALL;
+
+  IDirect3DBaseTexture9 *real = NULL;
+  HRESULT ret = m_pDevice->GetTexture(Stage, &real);
+
+  if(SUCCEEDED(ret) && real)
+  {
+    if(GetResourceManager()->HasWrapper(real))
+    {
+      IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
+      *ppTexture = (IDirect3DBaseTexture9 *)wrapper;
+      (*ppTexture)->AddRef();
+      real->Release();
+    }
+    else
+    {
+      *ppTexture = real;
+    }
+  }
+  else
+  {
+    *ppTexture = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetTexture(DWORD Stage,
                                                                IDirect3DBaseTexture9 *pTexture)
 {
+  IDirect3DBaseTexture9 *realTex = NULL;
+  if(pTexture)
+  {
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pTexture);
+    if(info)
+      realTex = (IDirect3DBaseTexture9 *)info->realObject;
+    else
+      realTex = pTexture;
+  }
+
   HRESULT ret;
-  SERIALISE_TIME_CALL(ret = m_pDevice->SetTexture(Stage, pTexture));
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetTexture(Stage, realTex));
 
   if(IsActiveCapturing(m_State))
   {
@@ -2002,19 +2129,17 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::ProcessVertices(
   IDirect3DVertexBuffer9 *realVB = pDestBuffer;
   if(pDestBuffer)
   {
-    WrappedIDirect3DVertexBuffer9 *wrappedVB =
-        dynamic_cast<WrappedIDirect3DVertexBuffer9 *>(pDestBuffer);
-    if(wrappedVB)
-      realVB = wrappedVB->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pDestBuffer);
+    if(info)
+      realVB = (IDirect3DVertexBuffer9 *)info->realObject;
   }
 
   IDirect3DVertexDeclaration9 *realDecl = pVertexDecl;
   if(pVertexDecl)
   {
-    WrappedIDirect3DVertexDeclaration9 *wrappedDecl =
-        dynamic_cast<WrappedIDirect3DVertexDeclaration9 *>(pVertexDecl);
-    if(wrappedDecl)
-      realDecl = wrappedDecl->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pVertexDecl);
+    if(info)
+      realDecl = (IDirect3DVertexDeclaration9 *)info->realObject;
   }
 
   return m_pDevice->ProcessVertices(SrcStartIndex, DestIndex, VertexCount, realVB, realDecl,
@@ -2069,10 +2194,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexDeclaration(
   IDirect3DVertexDeclaration9 *realDecl = NULL;
   if(pDecl)
   {
-    WrappedIDirect3DVertexDeclaration9 *wrappedDecl =
-        dynamic_cast<WrappedIDirect3DVertexDeclaration9 *>(pDecl);
-    if(wrappedDecl)
-      realDecl = wrappedDecl->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pDecl);
+    if(info)
+      realDecl = (IDirect3DVertexDeclaration9 *)info->realObject;
     else
       realDecl = pDecl;
   }
@@ -2102,9 +2226,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexDeclaration(
 
   if(SUCCEEDED(ret) && real)
   {
-    IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
-    if(wrapper)
+    if(GetResourceManager()->HasWrapper(real))
     {
+      IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
       *ppDecl = (IDirect3DVertexDeclaration9 *)wrapper;
       (*ppDecl)->AddRef();
     }
@@ -2200,10 +2324,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexShader(
   IDirect3DVertexShader9 *realShader = NULL;
   if(pShader)
   {
-    WrappedIDirect3DVertexShader9 *wrappedVS =
-        dynamic_cast<WrappedIDirect3DVertexShader9 *>(pShader);
-    if(wrappedVS)
-      realShader = wrappedVS->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pShader);
+    if(info)
+      realShader = (IDirect3DVertexShader9 *)info->realObject;
     else
       realShader = pShader;
   }
@@ -2233,9 +2356,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShader(
 
   if(SUCCEEDED(ret) && real)
   {
-    IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
-    if(wrapper)
+    if(GetResourceManager()->HasWrapper(real))
     {
+      IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
       *ppShader = (IDirect3DVertexShader9 *)wrapper;
       (*ppShader)->AddRef();
     }
@@ -2375,10 +2498,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetStreamSource(
   IDirect3DVertexBuffer9 *realVB = pStreamData;
   if(pStreamData)
   {
-    WrappedIDirect3DVertexBuffer9 *wrappedVB =
-        dynamic_cast<WrappedIDirect3DVertexBuffer9 *>(pStreamData);
-    if(wrappedVB)
-      realVB = wrappedVB->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pStreamData);
+    if(info)
+      realVB = (IDirect3DVertexBuffer9 *)info->realObject;
   }
 
   HRESULT ret;
@@ -2405,8 +2527,32 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetStreamSource(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetStreamSource(
     UINT StreamNumber, IDirect3DVertexBuffer9 **ppStreamData, UINT *pOffsetInBytes, UINT *pStride)
 {
-  // TODO: return wrapped buffer
-  return m_pDevice->GetStreamSource(StreamNumber, ppStreamData, pOffsetInBytes, pStride);
+  if(ppStreamData == NULL)
+    return D3DERR_INVALIDCALL;
+
+  IDirect3DVertexBuffer9 *real = NULL;
+  HRESULT ret = m_pDevice->GetStreamSource(StreamNumber, &real, pOffsetInBytes, pStride);
+
+  if(SUCCEEDED(ret) && real)
+  {
+    if(GetResourceManager()->HasWrapper(real))
+    {
+      IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
+      *ppStreamData = (IDirect3DVertexBuffer9 *)wrapper;
+      (*ppStreamData)->AddRef();
+      real->Release();
+    }
+    else
+    {
+      *ppStreamData = real;
+    }
+  }
+  else
+  {
+    *ppStreamData = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetStreamSourceFreq(UINT StreamNumber,
@@ -2448,10 +2594,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetIndices(IDirect3DIndexBuff
   IDirect3DIndexBuffer9 *realIB = pIndexData;
   if(pIndexData)
   {
-    WrappedIDirect3DIndexBuffer9 *wrappedIB =
-        dynamic_cast<WrappedIDirect3DIndexBuffer9 *>(pIndexData);
-    if(wrappedIB)
-      realIB = wrappedIB->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pIndexData);
+    if(info)
+      realIB = (IDirect3DIndexBuffer9 *)info->realObject;
   }
 
   HRESULT ret;
@@ -2470,8 +2615,32 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetIndices(IDirect3DIndexBuff
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetIndices(IDirect3DIndexBuffer9 **ppIndexData)
 {
-  // TODO: return wrapped index buffer
-  return m_pDevice->GetIndices(ppIndexData);
+  if(ppIndexData == NULL)
+    return D3DERR_INVALIDCALL;
+
+  IDirect3DIndexBuffer9 *real = NULL;
+  HRESULT ret = m_pDevice->GetIndices(&real);
+
+  if(SUCCEEDED(ret) && real)
+  {
+    if(GetResourceManager()->HasWrapper(real))
+    {
+      IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
+      *ppIndexData = (IDirect3DIndexBuffer9 *)wrapper;
+      (*ppIndexData)->AddRef();
+      real->Release();
+    }
+    else
+    {
+      *ppIndexData = real;
+    }
+  }
+  else
+  {
+    *ppIndexData = NULL;
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -2520,10 +2689,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetPixelShader(IDirect3DPixel
   IDirect3DPixelShader9 *realShader = NULL;
   if(pShader)
   {
-    WrappedIDirect3DPixelShader9 *wrappedPS =
-        dynamic_cast<WrappedIDirect3DPixelShader9 *>(pShader);
-    if(wrappedPS)
-      realShader = wrappedPS->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pShader);
+    if(info)
+      realShader = (IDirect3DPixelShader9 *)info->realObject;
     else
       realShader = pShader;
   }
@@ -2553,9 +2721,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetPixelShader(
 
   if(SUCCEEDED(ret) && real)
   {
-    IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
-    if(wrapper)
+    if(GetResourceManager()->HasWrapper(real))
     {
+      IUnknown *wrapper = GetResourceManager()->GetWrapper(real);
       *ppShader = (IDirect3DPixelShader9 *)wrapper;
       (*ppShader)->AddRef();
     }

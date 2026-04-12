@@ -24,6 +24,7 @@
 
 #include "d3d9_manager.h"
 #include "d3d9_device.h"
+#include "d3d9_resources.h"
 
 template <typename SerialiserType>
 bool D3D9ResourceManager::Serialise_InitialState(SerialiserType &ser, ResourceId id,
@@ -53,8 +54,7 @@ void D3D9ResourceManager::FreeCaptureData()
 
 ResourceId D3D9ResourceManager::GetID(IUnknown *res)
 {
-  // This will be implemented properly when resource wrappers exist
-  return ResourceId();
+  return GetIDForD3D9Resource(res);
 }
 
 bool D3D9ResourceManager::ResourceTypeRelease(IUnknown *res)

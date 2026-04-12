@@ -37,35 +37,10 @@ ResourceId GetIDForD3D9Resource(IUnknown *resource)
   if(resource == NULL)
     return ResourceId();
 
-  // Try each wrapped type via QueryInterface-free dynamic_cast approach.
-  // We use a simple approach: try to cast to each known wrapped type.
-  // Since we control the wrapped types, we can use dynamic_cast safely.
-
-  if(WrappedIDirect3DTexture9 *tex = dynamic_cast<WrappedIDirect3DTexture9 *>(resource))
-    return tex->GetResourceID();
-  if(WrappedIDirect3DCubeTexture9 *cube = dynamic_cast<WrappedIDirect3DCubeTexture9 *>(resource))
-    return cube->GetResourceID();
-  if(WrappedIDirect3DVolumeTexture9 *vol = dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(resource))
-    return vol->GetResourceID();
-  if(WrappedIDirect3DSurface9 *surf = dynamic_cast<WrappedIDirect3DSurface9 *>(resource))
-    return surf->GetResourceID();
-  if(WrappedIDirect3DVolume9 *volume = dynamic_cast<WrappedIDirect3DVolume9 *>(resource))
-    return volume->GetResourceID();
-  if(WrappedIDirect3DVertexBuffer9 *vb = dynamic_cast<WrappedIDirect3DVertexBuffer9 *>(resource))
-    return vb->GetResourceID();
-  if(WrappedIDirect3DIndexBuffer9 *ib = dynamic_cast<WrappedIDirect3DIndexBuffer9 *>(resource))
-    return ib->GetResourceID();
-  if(WrappedIDirect3DVertexShader9 *vs = dynamic_cast<WrappedIDirect3DVertexShader9 *>(resource))
-    return vs->GetResourceID();
-  if(WrappedIDirect3DPixelShader9 *ps = dynamic_cast<WrappedIDirect3DPixelShader9 *>(resource))
-    return ps->GetResourceID();
-  if(WrappedIDirect3DVertexDeclaration9 *decl =
-         dynamic_cast<WrappedIDirect3DVertexDeclaration9 *>(resource))
-    return decl->GetResourceID();
-  if(WrappedIDirect3DStateBlock9 *sb = dynamic_cast<WrappedIDirect3DStateBlock9 *>(resource))
-    return sb->GetResourceID();
-  if(WrappedIDirect3DQuery9 *query = dynamic_cast<WrappedIDirect3DQuery9 *>(resource))
-    return query->GetResourceID();
+  // Use our custom QI to identify wrapped resources without RTTI
+  D3D9WrappedInfo *info = NULL;
+  if(SUCCEEDED(resource->QueryInterface(IID_ID3D9WrappedResource, (void **)&info)))
+    return info->id;
 
   RDCERR("GetIDForD3D9Resource called on unrecognised/unwrapped resource");
   return ResourceId();
@@ -84,6 +59,7 @@ WrappedIDirect3DSurface9::WrappedIDirect3DSurface9(IDirect3DSurface9 *real,
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
   m_Lock = {};
+  m_WrappedInfo = {D3D9WrappedType::Surface, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -136,6 +112,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DSurface9::QueryInterface(REFIID riid, 
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    // Return info pointer without AddRef — callers use this for identification only
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DSurface9 *)this;
@@ -303,6 +285,7 @@ WrappedIDirect3DVolume9::WrappedIDirect3DVolume9(IDirect3DVolume9 *real,
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
   m_Lock = {};
+  m_WrappedInfo = {D3D9WrappedType::Volume, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -355,6 +338,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DVolume9::QueryInterface(REFIID riid, v
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DVolume9 *)this;
@@ -475,6 +463,7 @@ WrappedIDirect3DTexture9::WrappedIDirect3DTexture9(IDirect3DTexture9 *real,
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
   m_Lock = {};
+  m_WrappedInfo = {D3D9WrappedType::Texture, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -527,6 +516,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DTexture9::QueryInterface(REFIID riid, 
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DTexture9 *)this;
@@ -655,9 +649,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DTexture9::GetSurfaceLevel(
   if(SUCCEEDED(ret) && realSurf)
   {
     // Check if we already have a wrapper for this surface
-    IUnknown *existing = m_pDevice->GetResourceManager()->GetWrapper(realSurf);
-    if(existing)
+    if(m_pDevice->GetResourceManager()->HasWrapper(realSurf))
     {
+      IUnknown *existing = m_pDevice->GetResourceManager()->GetWrapper(realSurf);
       *ppSurfaceLevel = (IDirect3DSurface9 *)existing;
       (*ppSurfaceLevel)->AddRef();
       realSurf->Release();    // we don't need the extra real ref
@@ -752,6 +746,7 @@ WrappedIDirect3DCubeTexture9::WrappedIDirect3DCubeTexture9(IDirect3DCubeTexture9
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
   m_Lock = {};
+  m_WrappedInfo = {D3D9WrappedType::CubeTexture, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -804,6 +799,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DCubeTexture9::QueryInterface(REFIID ri
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DCubeTexture9 *)this;
@@ -933,9 +933,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DCubeTexture9::GetCubeMapSurface(
 
   if(SUCCEEDED(ret) && realSurf)
   {
-    IUnknown *existing = m_pDevice->GetResourceManager()->GetWrapper(realSurf);
-    if(existing)
+    if(m_pDevice->GetResourceManager()->HasWrapper(realSurf))
     {
+      IUnknown *existing = m_pDevice->GetResourceManager()->GetWrapper(realSurf);
       *ppCubeMapSurface = (IDirect3DSurface9 *)existing;
       (*ppCubeMapSurface)->AddRef();
       realSurf->Release();
@@ -1035,6 +1035,7 @@ WrappedIDirect3DVolumeTexture9::WrappedIDirect3DVolumeTexture9(IDirect3DVolumeTe
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
   m_Lock = {};
+  m_WrappedInfo = {D3D9WrappedType::VolumeTexture, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -1088,6 +1089,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DVolumeTexture9::QueryInterface(REFIID 
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DVolumeTexture9 *)this;
@@ -1217,9 +1223,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DVolumeTexture9::GetVolumeLevel(
 
   if(SUCCEEDED(ret) && realVol)
   {
-    IUnknown *existing = m_pDevice->GetResourceManager()->GetWrapper(realVol);
-    if(existing)
+    if(m_pDevice->GetResourceManager()->HasWrapper(realVol))
     {
+      IUnknown *existing = m_pDevice->GetResourceManager()->GetWrapper(realVol);
       *ppVolumeLevel = (IDirect3DVolume9 *)existing;
       (*ppVolumeLevel)->AddRef();
       realVol->Release();

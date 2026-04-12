@@ -30,6 +30,7 @@ WrappedIDirect3DSwapChain9::WrappedIDirect3DSwapChain9(IDirect3DSwapChain9 *real
     : m_pReal(real), m_pDevice(device), m_ExtRef(1), m_IntRef(0)
 {
   m_ID = ResourceIDGen::GetNewUniqueID();
+  m_WrappedInfo = {D3D9WrappedType::SwapChain, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -74,6 +75,12 @@ ULONG STDMETHODCALLTYPE WrappedIDirect3DSwapChain9::Release()
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DSwapChain9::QueryInterface(REFIID riid, void **ppvObj)
 {
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
+
   if(riid == __uuidof(IDirect3DSwapChain9))
   {
     AddRef();
@@ -140,10 +147,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DSwapChain9::GetFrontBufferData(
   IDirect3DSurface9 *realSurface = pDestSurface;
   if(pDestSurface)
   {
-    WrappedIDirect3DSurface9 *wrappedSurf =
-        dynamic_cast<WrappedIDirect3DSurface9 *>(pDestSurface);
-    if(wrappedSurf)
-      realSurface = wrappedSurf->GetReal();
+    D3D9WrappedInfo *info = GetD3D9WrappedInfo(pDestSurface);
+    if(info)
+      realSurface = (IDirect3DSurface9 *)info->realObject;
   }
   return m_pReal->GetFrontBufferData(realSurface);
 }
@@ -157,17 +163,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DSwapChain9::GetBackBuffer(
   if(SUCCEEDED(ret) && realSurface)
   {
     // Check if we already have a wrapper for this surface
-    IUnknown *existing = m_pDevice->GetResourceManager()->GetWrapper(realSurface);
-    if(existing)
+    if(m_pDevice->GetResourceManager()->HasWrapper(realSurface))
     {
-      WrappedIDirect3DSurface9 *wrapped = dynamic_cast<WrappedIDirect3DSurface9 *>(existing);
-      if(wrapped)
-      {
-        wrapped->AddRef();
-        realSurface->Release();    // release the ref from GetBackBuffer
-        *ppBackBuffer = wrapped;
-        return ret;
-      }
+      IUnknown *existing = m_pDevice->GetResourceManager()->GetWrapper(realSurface);
+      existing->AddRef();
+      realSurface->Release();    // release the ref from GetBackBuffer
+      *ppBackBuffer = (IDirect3DSurface9 *)existing;
+      return ret;
     }
 
     // Create a new wrapper for this back buffer surface
