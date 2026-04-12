@@ -26,6 +26,7 @@
 #include "core/core.h"
 #include "d3d9_buffers.h"
 #include "d3d9_query.h"
+#include "d3d9_replay.h"
 #include "d3d9_resources.h"
 #include "d3d9_shaders.h"
 #include "d3d9_stateblock.h"
@@ -55,6 +56,8 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real, Wrapped
   m_SectionVersion = D3D9InitParams::CurrentVersion;
 
   m_StructuredFile = m_StoredStructuredData = new SDFile;
+
+  RDCEraseEl(APIProps);
 
   if(RenderDoc::Inst().IsReplayApp())
   {
@@ -111,7 +114,6 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real,
   m_RefCount = 1;
   m_FrameCounter = 0;
   m_StateBlockRecording = false;
-  m_Replay = NULL;
   m_DeviceRecord = NULL;
 
   m_CurEventID = 0;
@@ -137,6 +139,10 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real,
   m_ScratchSerialiser.SetChunkMetadataRecording(flags);
   m_ScratchSerialiser.SetVersion(D3D9InitParams::CurrentVersion);
   m_ScratchSerialiser.SetUserData(GetResourceManager());
+
+  m_Replay = new D3D9Replay(this);
+
+  RDCEraseEl(APIProps);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -2759,4 +2765,121 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateQuery(D3DQUERYTYPE Type
   }
 
   return ret;
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Replay support
+///////////////////////////////////////////////////////////////////////////
+
+static rdcstr D3D9ChunkName(uint32_t idx)
+{
+  if((SystemChunk)idx < SystemChunk::FirstDriverChunk)
+    return ToStr((SystemChunk)idx);
+
+  return ToStr((D3D9Chunk)idx);
+}
+
+RDResult WrappedIDirect3DDevice9::ReadLogInitialisation(RDCFile *rdc, bool storeStructuredBuffers)
+{
+  int sectionIdx = rdc->SectionIndex(SectionType::FrameCapture);
+  if(sectionIdx < 0)
+    RETURN_ERROR_RESULT(ResultCode::FileCorrupted, "File does not contain captured API data");
+
+  StreamReader *reader = rdc->ReadSection(sectionIdx);
+
+  if(reader->IsErrored())
+  {
+    RDResult result = reader->GetError();
+    delete reader;
+    return result;
+  }
+
+  ReadSerialiser ser(reader, Ownership::Stream);
+
+  ser.SetStringDatabase(&m_StructuredFile->strings);
+  ser.SetUserData(GetResourceManager());
+
+  ser.ConfigureStructuredExport(&D3D9ChunkName, storeStructuredBuffers, 0, 1.0);
+
+  m_StructuredFile = &ser.GetStructuredFile();
+
+  m_StoredStructuredData->version = m_StructuredFile->version = m_SectionVersion;
+
+  ser.SetVersion(m_SectionVersion);
+
+  m_FrameRecord.frameInfo.fileOffset = 0;
+  m_FrameRecord.frameInfo.frameNumber = 0;
+
+  // read through the log, populating the structured file and action list
+  m_CurEventID = 0;
+  m_CurActionID = 0;
+
+  {
+    // set up the parent action
+    m_ParentAction.children.clear();
+    m_ActionStack.clear();
+    m_ActionStack.push_back(&m_ParentAction);
+  }
+
+  for(;;)
+  {
+    m_CurChunkOffset = ser.GetReader()->GetOffset();
+
+    D3D9Chunk chunktype = ser.ReadChunk<D3D9Chunk>();
+
+    if(ser.GetReader()->IsErrored())
+      return RDResult(ResultCode::APIDataCorrupted, ser.GetError().message);
+
+    bool success = true;
+
+    if(chunktype == D3D9Chunk::Max || chunktype == (D3D9Chunk)SystemChunk::Max)
+    {
+      ser.EndChunk();
+      break;
+    }
+
+    m_CurEventID++;
+
+    // For now, skip the actual chunk processing since the serialised method dispatch
+    // table hasn't been fully wired up for replay yet. We just skip chunks.
+    // TODO: Wire up the full chunk dispatch for all D3D9Chunk types
+    ser.SkipCurrentChunk();
+    ser.EndChunk();
+
+    if(ser.GetReader()->IsErrored())
+      return RDResult(ResultCode::APIDataCorrupted, ser.GetError().message);
+
+    if(!success)
+      return RDResult(ResultCode::APIDataCorrupted, "Failed to process chunk during replay");
+  }
+
+  // swap the loaded action list into the frame record
+  m_FrameRecord.actionList.swap(m_ParentAction.children);
+
+  SetupActionPointers(m_ActionTable, m_FrameRecord.actionList);
+
+  GetReplay()->WriteFrameRecord() = m_FrameRecord;
+
+  if(storeStructuredBuffers)
+    m_StoredStructuredData->Swap(*m_StructuredFile);
+
+  m_StructuredFile = m_StoredStructuredData;
+
+  return ResultCode::Succeeded;
+}
+
+void WrappedIDirect3DDevice9::ReplayLog(uint32_t startEventID, uint32_t endEventID,
+                                        ReplayLogType replayType)
+{
+  // TODO: Implement full replay log processing
+  // For now this is a stub that will be fleshed out when the chunk dispatch is wired up.
+  RDCDEBUG("D3D9 ReplayLog(%u, %u, %d)", startEventID, endEventID, (int)replayType);
+}
+
+const ActionDescription *WrappedIDirect3DDevice9::GetAction(uint32_t eventId)
+{
+  if(eventId < m_ActionTable.size())
+    return m_ActionTable[eventId];
+
+  return NULL;
 }

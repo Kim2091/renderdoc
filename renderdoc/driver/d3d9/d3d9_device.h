@@ -28,6 +28,7 @@
 #include "common/threading.h"
 #include "common/timing.h"
 #include "core/core.h"
+#include "replay/replay_driver.h"
 #include "d3d9_common.h"
 #include "d3d9_manager.h"
 #include "d3d9_renderstate.h"
@@ -83,6 +84,9 @@ private:
 
   PerformanceTimer m_CaptureTimer;
 
+  FrameRecord m_FrameRecord;
+  rdcarray<ActionDescription *> m_ActionTable;
+
   // Event/action tracking for replay
   uint32_t m_CurEventID;
   uint32_t m_CurActionID;
@@ -110,6 +114,14 @@ public:
   Threading::CriticalSection &D3DLock() { return m_D3DLock; }
 
   SDFile *GetStructuredFile() { return m_StructuredFile; }
+  SDFile *DetachStructuredFile()
+  {
+    SDFile *ret = m_StoredStructuredData;
+    m_StoredStructuredData = m_StructuredFile = new SDFile;
+    return ret;
+  }
+
+  D3D9Replay *GetReplay() { return m_Replay; }
 
   void IncrementFrameCounter() { m_FrameCounter++; }
   uint32_t GetFrameCounter() const { return m_FrameCounter; }
@@ -119,6 +131,18 @@ public:
   bool Serialise_SwapChainPresent(SerialiserType &ser, const RECT *pSourceRect,
                                   const RECT *pDestRect, HWND hDestWindowOverride,
                                   const RGNDATA *pDirtyRegion);
+
+  ////////////////////////////////////////////////////////////////
+  // Replay support
+
+  RDResult ReadLogInitialisation(RDCFile *rdc, bool storeStructuredBuffers);
+  void ReplayLog(uint32_t startEventID, uint32_t endEventID, ReplayLogType replayType);
+
+  const ActionDescription *GetAction(uint32_t eventId);
+
+  FrameRecord &GetFrameRecord() { return m_FrameRecord; }
+
+  APIProperties APIProps;
 
   ////////////////////////////////////////////////////////////////
   // Event/Action tracking for replay

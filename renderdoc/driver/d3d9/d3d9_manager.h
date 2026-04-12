@@ -134,6 +134,10 @@ public:
   void SetInternalResource(IUnknown *res);
   void FreeCaptureData();
 
+  // Expose resource map iteration for replay enumeration
+  typedef std::unordered_map<ResourceId, IUnknown *> ResourceMap;
+  const ResourceMap &GetResourceMap() { return m_ResourceMap; }
+
   template <typename SerialiserType>
   bool Serialise_InitialState(SerialiserType &ser, ResourceId id, D3D9ResourceRecord *record,
                               const D3D9InitialContents *initial);

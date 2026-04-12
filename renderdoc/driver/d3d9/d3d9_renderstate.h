@@ -35,7 +35,7 @@ static const UINT D3D9_MAX_STREAMS = 16;
 static const UINT D3D9_MAX_RENDER_TARGETS = 4;
 static const UINT D3D9_MAX_CLIP_PLANES = 6;
 static const UINT D3D9_MAX_LIGHTS = 8;    // common practical max
-static const UINT D3D9_MAX_TRANSFORMS = 256;
+static const UINT D3D9_MAX_TRANSFORMS = 512;    // must accommodate D3DTS_WORLDMATRIX(0..255) = 256..511
 static const UINT D3D9_MAX_RENDER_STATES = 210;
 static const UINT D3D9_MAX_TSS_STATES = 33;
 static const UINT D3D9_MAX_SAMPLER_STATES = 14;
