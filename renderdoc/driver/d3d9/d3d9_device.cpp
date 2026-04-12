@@ -24,6 +24,7 @@
 
 #include "d3d9_device.h"
 #include "core/core.h"
+#include "d3d9_buffers.h"
 #include "d3d9_resources.h"
 #include "serialise/rdcfile.h"
 #include "strings/string_utils.h"
@@ -709,16 +710,86 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateVertexBuffer(
     UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool,
     IDirect3DVertexBuffer9 **ppVertexBuffer, HANDLE *pSharedHandle)
 {
-  // TODO: wrap created vertex buffer
-  return m_pDevice->CreateVertexBuffer(Length, Usage, FVF, Pool, ppVertexBuffer, pSharedHandle);
+  IDirect3DVertexBuffer9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(
+      ret = m_pDevice->CreateVertexBuffer(Length, Usage, FVF, Pool, &real, pSharedHandle));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DVertexBuffer9 *wrappedVB =
+        new WrappedIDirect3DVertexBuffer9(real, this, Length, Usage);
+    IDirect3DVertexBuffer9 *wrappedPtr = wrappedVB;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedVB->GetResourceID());
+      record->resType = D3D9ResourceType::VertexBuffer;
+      record->pool = Pool;
+      record->usage = Usage;
+      record->Length = Length;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateVertexBuffer);
+        Serialise_CreateVertexBuffer(ser, Length, Usage, FVF, Pool, &wrappedPtr, pSharedHandle);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppVertexBuffer = wrappedVB;
+  }
+  else
+  {
+    if(ppVertexBuffer)
+      *ppVertexBuffer = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateIndexBuffer(
     UINT Length, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool,
     IDirect3DIndexBuffer9 **ppIndexBuffer, HANDLE *pSharedHandle)
 {
-  // TODO: wrap created index buffer
-  return m_pDevice->CreateIndexBuffer(Length, Usage, Format, Pool, ppIndexBuffer, pSharedHandle);
+  IDirect3DIndexBuffer9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(
+      ret = m_pDevice->CreateIndexBuffer(Length, Usage, Format, Pool, &real, pSharedHandle));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DIndexBuffer9 *wrappedIB =
+        new WrappedIDirect3DIndexBuffer9(real, this, Length, Usage, Format);
+    IDirect3DIndexBuffer9 *wrappedPtr = wrappedIB;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedIB->GetResourceID());
+      record->resType = D3D9ResourceType::IndexBuffer;
+      record->pool = Pool;
+      record->usage = Usage;
+      record->Length = Length;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateIndexBuffer);
+        Serialise_CreateIndexBuffer(ser, Length, Usage, Format, Pool, &wrappedPtr, pSharedHandle);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppIndexBuffer = wrappedIB;
+  }
+  else
+  {
+    if(ppIndexBuffer)
+      *ppIndexBuffer = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateRenderTarget(
@@ -1544,7 +1615,16 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::ProcessVertices(
     UINT SrcStartIndex, UINT DestIndex, UINT VertexCount, IDirect3DVertexBuffer9 *pDestBuffer,
     IDirect3DVertexDeclaration9 *pVertexDecl, DWORD Flags)
 {
-  return m_pDevice->ProcessVertices(SrcStartIndex, DestIndex, VertexCount, pDestBuffer, pVertexDecl,
+  IDirect3DVertexBuffer9 *realVB = pDestBuffer;
+  if(pDestBuffer)
+  {
+    WrappedIDirect3DVertexBuffer9 *wrappedVB =
+        dynamic_cast<WrappedIDirect3DVertexBuffer9 *>(pDestBuffer);
+    if(wrappedVB)
+      realVB = wrappedVB->GetReal();
+  }
+
+  return m_pDevice->ProcessVertices(SrcStartIndex, DestIndex, VertexCount, realVB, pVertexDecl,
                                     Flags);
 }
 
@@ -1766,15 +1846,23 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShaderConstantB(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetStreamSource(
     UINT StreamNumber, IDirect3DVertexBuffer9 *pStreamData, UINT OffsetInBytes, UINT Stride)
 {
+  IDirect3DVertexBuffer9 *realVB = pStreamData;
+  if(pStreamData)
+  {
+    WrappedIDirect3DVertexBuffer9 *wrappedVB =
+        dynamic_cast<WrappedIDirect3DVertexBuffer9 *>(pStreamData);
+    if(wrappedVB)
+      realVB = wrappedVB->GetReal();
+  }
+
   HRESULT ret;
-  SERIALISE_TIME_CALL(ret = m_pDevice->SetStreamSource(StreamNumber, pStreamData, OffsetInBytes,
-                                                        Stride));
+  SERIALISE_TIME_CALL(
+      ret = m_pDevice->SetStreamSource(StreamNumber, realVB, OffsetInBytes, Stride));
 
   if(StreamNumber < D3D9_MAX_STREAMS)
   {
     m_RenderState.streamSources[StreamNumber].offsetInBytes = OffsetInBytes;
     m_RenderState.streamSources[StreamNumber].stride = Stride;
-    // TODO: update buffer ResourceId in shadow state once resource wrappers exist
   }
 
   if(IsActiveCapturing(m_State))
@@ -1831,8 +1919,17 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetStreamSourceFreq(UINT Stre
 ///////////////////////////////////////////////////////////////////////////
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetIndices(IDirect3DIndexBuffer9 *pIndexData)
 {
+  IDirect3DIndexBuffer9 *realIB = pIndexData;
+  if(pIndexData)
+  {
+    WrappedIDirect3DIndexBuffer9 *wrappedIB =
+        dynamic_cast<WrappedIDirect3DIndexBuffer9 *>(pIndexData);
+    if(wrappedIB)
+      realIB = wrappedIB->GetReal();
+  }
+
   HRESULT ret;
-  SERIALISE_TIME_CALL(ret = m_pDevice->SetIndices(pIndexData));
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetIndices(realIB));
 
   if(IsActiveCapturing(m_State))
   {

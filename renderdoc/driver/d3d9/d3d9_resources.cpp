@@ -23,6 +23,7 @@
  ******************************************************************************/
 
 #include "d3d9_resources.h"
+#include "d3d9_buffers.h"
 
 ///////////////////////////////////////////////////////////////////////////
 // GetIDForD3D9Resource
@@ -47,6 +48,10 @@ ResourceId GetIDForD3D9Resource(IUnknown *resource)
     return surf->GetResourceID();
   if(WrappedIDirect3DVolume9 *volume = dynamic_cast<WrappedIDirect3DVolume9 *>(resource))
     return volume->GetResourceID();
+  if(WrappedIDirect3DVertexBuffer9 *vb = dynamic_cast<WrappedIDirect3DVertexBuffer9 *>(resource))
+    return vb->GetResourceID();
+  if(WrappedIDirect3DIndexBuffer9 *ib = dynamic_cast<WrappedIDirect3DIndexBuffer9 *>(resource))
+    return ib->GetResourceID();
 
   RDCERR("GetIDForD3D9Resource called on unrecognised/unwrapped resource");
   return ResourceId();
