@@ -1,8 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2015-2026 Baldur Karlsson
- * Copyright (c) 2014 Crytek
+ * Copyright (c) 2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,8 +22,9 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
-#include "driver/d3d11/d3d11_device.h"
 #include "hooks/hooks.h"
+#include "d3d9_d3d9.h"
+#include "d3d9_device.h"
 
 typedef int(WINAPI *PFN_BEGIN_EVENT)(DWORD, WCHAR *);
 typedef int(WINAPI *PFN_END_EVENT)();
@@ -41,17 +41,58 @@ public:
 
     LibraryHooks::RegisterLibraryHook("d3d9.dll", NULL);
 
+    Direct3DCreate9_hook.Register("d3d9.dll", "Direct3DCreate9", Direct3DCreate9_hook_fn);
+
+    // D3DPERF hooks
     PERF_BeginEvent.Register("d3d9.dll", "D3DPERF_BeginEvent", PERF_BeginEvent_hook);
     PERF_EndEvent.Register("d3d9.dll", "D3DPERF_EndEvent", PERF_EndEvent_hook);
     PERF_SetMarker.Register("d3d9.dll", "D3DPERF_SetMarker", PERF_SetMarker_hook);
     PERF_SetOptions.Register("d3d9.dll", "D3DPERF_SetOptions", PERF_SetOptions_hook);
     PERF_GetStatus.Register("d3d9.dll", "D3DPERF_GetStatus", PERF_GetStatus_hook);
+
+    m_RecurseSlot = Threading::AllocateTLSSlot();
+    Threading::SetTLSValue(m_RecurseSlot, NULL);
   }
 
 private:
   static D3D9Hook d3d9hooks;
 
-  // D3DPERF api
+  // re-entrancy detection
+  uint64_t m_RecurseSlot = 0;
+
+  bool CheckRecurse() { return Threading::GetTLSValue(m_RecurseSlot) != 0; }
+  void BeginRecurse() { Threading::SetTLSValue(m_RecurseSlot, (void *)1); }
+  void EndRecurse() { Threading::SetTLSValue(m_RecurseSlot, NULL); }
+
+  ////////////////////////////////////////////////////////////////
+  // Direct3DCreate9 hook
+
+  HookedFunction<decltype(&Direct3DCreate9)> Direct3DCreate9_hook;
+
+  static IDirect3D9 *WINAPI Direct3DCreate9_hook_fn(UINT SDKVersion)
+  {
+    RDCLOG("Direct3DCreate9 called (SDKVersion=%u)", SDKVersion);
+
+    if(d3d9hooks.CheckRecurse())
+      return d3d9hooks.Direct3DCreate9_hook()(SDKVersion);
+
+    d3d9hooks.BeginRecurse();
+    IDirect3D9 *real = d3d9hooks.Direct3DCreate9_hook()(SDKVersion);
+    d3d9hooks.EndRecurse();
+
+    if(real == NULL)
+    {
+      RDCERR("Direct3DCreate9 returned NULL");
+      return NULL;
+    }
+
+    RDCLOG("Wrapping IDirect3D9 %p", real);
+    return new WrappedIDirect3D9(real);
+  }
+
+  ////////////////////////////////////////////////////////////////
+  // D3DPERF hooks
+
   HookedFunction<PFN_BEGIN_EVENT> PERF_BeginEvent;
   HookedFunction<PFN_END_EVENT> PERF_EndEvent;
   HookedFunction<PFN_SET_MARKER_EVENT> PERF_SetMarker;
@@ -60,7 +101,7 @@ private:
 
   static int WINAPI PERF_BeginEvent_hook(DWORD col, WCHAR *wszName)
   {
-    int ret = WrappedID3D11Device::BeginEvent((uint32_t)col, wszName);
+    int ret = WrappedIDirect3DDevice9::BeginEvent((uint32_t)col, wszName);
 
     d3d9hooks.PERF_BeginEvent()(col, wszName);
 
@@ -69,7 +110,7 @@ private:
 
   static int WINAPI PERF_EndEvent_hook()
   {
-    int ret = WrappedID3D11Device::EndEvent();
+    int ret = WrappedIDirect3DDevice9::EndEvent();
 
     d3d9hooks.PERF_EndEvent()();
 
@@ -78,7 +119,7 @@ private:
 
   static void WINAPI PERF_SetMarker_hook(DWORD col, WCHAR *wszName)
   {
-    WrappedID3D11Device::SetMarker((uint32_t)col, wszName);
+    WrappedIDirect3DDevice9::SetMarker((uint32_t)col, wszName);
 
     d3d9hooks.PERF_SetMarker()(col, wszName);
   }
