@@ -96,6 +96,16 @@ rdcstr PipeState::OutputAbbrev() const
   return "RT";
 }
 
+bool PipeState::IsD3D9Stage(ShaderStage stage) const
+{
+  switch(stage)
+  {
+    case ShaderStage::Vertex:
+    case ShaderStage::Pixel: return true;
+    default: return false;
+  }
+}
+
 bool PipeState::IsD3D11Stage(ShaderStage stage) const
 {
   switch(stage)
@@ -154,6 +164,17 @@ bool PipeState::IsVulkanStage(ShaderStage stage) const
     case ShaderStage::Mesh: return true;
     default: return false;
   }
+}
+
+const D3D9Pipe::Shader &PipeState::GetD3D9Stage(ShaderStage stage) const
+{
+  if(stage == ShaderStage::Vertex)
+    return m_D3D9->vertexShader;
+  if(stage == ShaderStage::Pixel)
+    return m_D3D9->pixelShader;
+
+  RENDERDOC_LogMessage(LogType::Error, "PIPE", __FILE__, __LINE__, "Error - invalid stage");
+  return m_D3D9->pixelShader;
 }
 
 const D3D11Pipe::Shader &PipeState::GetD3D11Stage(ShaderStage stage) const

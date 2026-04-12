@@ -1965,6 +1965,10 @@ constexpr GPUVendor GPUVendorFromPCIVendor(uint32_t vendorID)
 
 DOCUMENT(R"(Identifies a Graphics API.
 
+.. data:: D3D9
+
+  Direct3D 9.
+
 .. data:: D3D11
 
   Direct3D 11.
@@ -1984,6 +1988,7 @@ DOCUMENT(R"(Identifies a Graphics API.
 )");
 enum class GraphicsAPI : uint32_t
 {
+  D3D9,
   D3D11,
   D3D12,
   OpenGL,
@@ -2000,7 +2005,7 @@ DOCUMENT(R"(Check if an API is D3D or not
 )");
 constexpr inline bool IsD3D(GraphicsAPI api)
 {
-  return api == GraphicsAPI::D3D11 || api == GraphicsAPI::D3D12;
+  return api == GraphicsAPI::D3D9 || api == GraphicsAPI::D3D11 || api == GraphicsAPI::D3D12;
 }
 
 DOCUMENT(R"(Identifies a shader encoding used to pass shader code to an API.

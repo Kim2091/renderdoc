@@ -863,6 +863,7 @@ void RenderDoc::InitialiseReplay(GlobalEnvironment env, const rdcarray<rdcstr> &
 
         switch(api)
         {
+          case GraphicsAPI::D3D9: driverType = RDCDriver::D3D9; break;
           case GraphicsAPI::D3D11: driverType = RDCDriver::D3D11; break;
           case GraphicsAPI::D3D12: driverType = RDCDriver::D3D12; break;
           case GraphicsAPI::OpenGL: break;
@@ -2086,6 +2087,7 @@ DriverInformation RenderDoc::GetDriverInformation(GraphicsAPI api)
   RDCDriver driverType = RDCDriver::Unknown;
   switch(api)
   {
+    case GraphicsAPI::D3D9: driverType = RDCDriver::D3D9; break;
     case GraphicsAPI::D3D11: driverType = RDCDriver::D3D11; break;
     case GraphicsAPI::D3D12: driverType = RDCDriver::D3D12; break;
     case GraphicsAPI::OpenGL: driverType = RDCDriver::OpenGL; break;
