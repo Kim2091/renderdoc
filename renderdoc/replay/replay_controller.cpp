@@ -89,6 +89,13 @@ void ReplayController::SetFrameEvent(uint32_t eventId, bool force)
   }
 }
 
+const D3D9Pipe::State *ReplayController::GetD3D9PipelineState()
+{
+  CHECK_REPLAY_THREAD();
+
+  return m_APIProps.pipelineType == GraphicsAPI::D3D9 ? &m_D3D9PipelineState : NULL;
+}
+
 const D3D11Pipe::State *ReplayController::GetD3D11PipelineState()
 {
   CHECK_REPLAY_THREAD();
@@ -1986,6 +1993,7 @@ bool ReplayController::FatalErrorCheck()
     old->Shutdown();
 
     // reset pipeline states to default
+    m_D3D9PipelineState = D3D9Pipe::State();
     m_D3D11PipelineState = D3D11Pipe::State();
     m_D3D12PipelineState = D3D12Pipe::State();
     m_GLPipelineState = GLPipe::State();
@@ -2221,8 +2229,8 @@ RDResult ReplayController::PostCreateInit(IReplayDriver *device, RDCFile *rdc)
   if(m_FatalError != ResultCode::Succeeded)
     return m_FatalError;
 
-  m_pDevice->SetPipelineStates(&m_D3D11PipelineState, &m_D3D12PipelineState, &m_GLPipelineState,
-                               &m_VulkanPipelineState);
+  m_pDevice->SetPipelineStates(&m_D3D9PipelineState, &m_D3D11PipelineState, &m_D3D12PipelineState,
+                               &m_GLPipelineState, &m_VulkanPipelineState);
 
   GCNISA::GetTargets(m_APIProps.pipelineType, m_pDevice->GetDriverInfo(), m_GCNTargets);
 
@@ -2279,7 +2287,9 @@ void ReplayController::FetchPipelineState(uint32_t eventId)
   m_pDevice->SavePipelineState(eventId);
   FatalErrorCheck();
 
-  if(m_APIProps.pipelineType == GraphicsAPI::D3D11)
+  if(m_APIProps.pipelineType == GraphicsAPI::D3D9)
+    m_PipeState.SetState(&m_D3D9PipelineState);
+  else if(m_APIProps.pipelineType == GraphicsAPI::D3D11)
     m_PipeState.SetState(&m_D3D11PipelineState);
   else if(m_APIProps.pipelineType == GraphicsAPI::D3D12)
     m_PipeState.SetState(&m_D3D12PipelineState);

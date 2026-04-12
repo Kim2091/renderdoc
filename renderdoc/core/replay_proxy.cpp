@@ -226,7 +226,9 @@ ReplayProxy::ReplayProxy(ReadSerialiser &reader, WriteSerialiser &writer, IRemot
   if(m_Replay)
     InitPreviewWindow();
 
-  if(m_APIProps.pipelineType == GraphicsAPI::D3D11)
+  if(m_APIProps.pipelineType == GraphicsAPI::D3D9)
+    m_D3D9PipelineState = new D3D9Pipe::State;
+  else if(m_APIProps.pipelineType == GraphicsAPI::D3D11)
     m_D3D11PipelineState = new D3D11Pipe::State;
   else if(m_APIProps.pipelineType == GraphicsAPI::D3D12)
     m_D3D12PipelineState = new D3D12Pipe::State;
@@ -235,8 +237,8 @@ ReplayProxy::ReplayProxy(ReadSerialiser &reader, WriteSerialiser &writer, IRemot
   else if(m_APIProps.pipelineType == GraphicsAPI::Vulkan)
     m_VulkanPipelineState = new VKPipe::State;
 
-  m_Remote->SetPipelineStates(m_D3D11PipelineState, m_D3D12PipelineState, m_GLPipelineState,
-                              m_VulkanPipelineState);
+  m_Remote->SetPipelineStates(m_D3D9PipelineState, m_D3D11PipelineState, m_D3D12PipelineState,
+                              m_GLPipelineState, m_VulkanPipelineState);
 }
 
 ReplayProxy::ReplayProxy(ReadSerialiser &reader, WriteSerialiser &writer, IReplayDriver *proxy)
@@ -258,6 +260,7 @@ ReplayProxy::~ReplayProxy()
   SAFE_DELETE(m_StructuredFile);
   if(m_Remote)
   {
+    SAFE_DELETE(m_D3D9PipelineState);
     SAFE_DELETE(m_D3D11PipelineState);
     SAFE_DELETE(m_D3D12PipelineState);
     SAFE_DELETE(m_GLPipelineState);
@@ -1811,7 +1814,11 @@ void ReplayProxy::Proxied_SavePipelineState(ParamSerialiser &paramser, ReturnSer
   {
     ReturnSerialiser &ser = retser;
     PACKET_HEADER(packet);
-    if(m_APIProps.pipelineType == GraphicsAPI::D3D11)
+    if(m_APIProps.pipelineType == GraphicsAPI::D3D9)
+    {
+      SERIALISE_ELEMENT(*m_D3D9PipelineState);
+    }
+    else if(m_APIProps.pipelineType == GraphicsAPI::D3D11)
     {
       SERIALISE_ELEMENT(*m_D3D11PipelineState);
     }

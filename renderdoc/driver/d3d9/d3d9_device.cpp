@@ -209,6 +209,11 @@ void WrappedIDirect3DDevice9::AddAction(const ActionDescription &a)
   action.eventId = m_CurEventID;
   action.actionId = m_CurActionID;
 
+  for(int i = 0; i < D3D9_MAX_RENDER_TARGETS; i++)
+    action.outputs[i] = m_RenderState.renderTargets[i];
+
+  action.depthOut = m_RenderState.depthStencil;
+
   // markers don't increment action ID
   ActionFlags MarkerMask = ActionFlags::SetMarker | ActionFlags::PushMarker | ActionFlags::PopMarker;
   if(!(action.flags & MarkerMask))
@@ -292,7 +297,140 @@ void WrappedIDirect3DDevice9::StartFrameCapture(DeviceOwnedWindow devWnd)
 
   GetResourceManager()->FreeCaptureData();
 
+  // Helper lambda: ensure a real D3D9 surface has a wrapped resource with a resource record.
+  // If the surface was obtained implicitly (e.g. via GetBackBuffer) it may have a wrapper
+  // but no resource record. We need the record so it gets serialized into the capture.
+  auto ensureSurfaceRecord = [this](IDirect3DSurface9 *realSurf, bool isDepth) -> IDirect3DSurface9 * {
+    if(!realSurf)
+      return NULL;
+
+    WrappedIDirect3DSurface9 *wrapped = NULL;
+
+    if(GetResourceManager()->HasWrapper(realSurf))
+    {
+      wrapped = (WrappedIDirect3DSurface9 *)GetResourceManager()->GetWrapper(realSurf);
+    }
+    else
+    {
+      // Surface was never wrapped (game never called GetBackBuffer). Wrap it now.
+      realSurf->AddRef();    // wrapper takes ownership
+      wrapped = new WrappedIDirect3DSurface9(realSurf, this);
+    }
+
+    ResourceId id = wrapped->GetResourceID();
+
+    // Check if this resource already has a record
+    if(!GetResourceManager()->GetResourceRecord(id))
+    {
+      D3DSURFACE_DESC desc;
+      wrapped->GetReal()->GetDesc(&desc);
+
+      D3D9ResourceRecord *record = GetResourceManager()->AddResourceRecord(id);
+      record->resType = D3D9ResourceType::Surface;
+      record->pool = D3DPOOL_DEFAULT;
+      record->usage = desc.Usage;
+      record->Length = 0;
+
+      // Serialize the creation chunk so the resource exists on replay
+      USE_SCRATCH_SERIALISER();
+      IDirect3DSurface9 *wrappedPtr = wrapped;
+      if(isDepth)
+      {
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateDepthStencilSurface);
+        Serialise_CreateDepthStencilSurface(ser, desc.Width, desc.Height, desc.Format,
+                                            desc.MultiSampleType, desc.MultiSampleQuality, FALSE,
+                                            &wrappedPtr, NULL);
+        record->AddChunk(scope.Get());
+      }
+      else
+      {
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateRenderTarget);
+        Serialise_CreateRenderTarget(ser, desc.Width, desc.Height, desc.Format,
+                                     desc.MultiSampleType, desc.MultiSampleQuality, TRUE,
+                                     &wrappedPtr, NULL);
+        record->AddChunk(scope.Get());
+      }
+
+      // Mark dirty so PrepareInitialContents captures the surface data
+      GetResourceManager()->MarkDirtyResource(id);
+    }
+
+    return wrapped;
+  };
+
+  // Ensure render target and depth stencil surfaces are wrapped and recorded BEFORE
+  // PrepareInitialContents, so their initial state gets captured.
+  for(DWORD rt = 0; rt < D3D9_MAX_RENDER_TARGETS; rt++)
+  {
+    IDirect3DSurface9 *realRT = NULL;
+    m_pDevice->GetRenderTarget(rt, &realRT);
+    if(realRT)
+    {
+      ensureSurfaceRecord(realRT, false);
+      realRT->Release();
+    }
+  }
+
+  {
+    IDirect3DSurface9 *realDS = NULL;
+    m_pDevice->GetDepthStencilSurface(&realDS);
+    if(realDS)
+    {
+      ensureSurfaceRecord(realDS, true);
+      realDS->Release();
+    }
+  }
+
   GetResourceManager()->PrepareInitialContents();
+
+  // Now serialize the SetRenderTarget / SetDepthStencilSurface calls into the frame data
+  // so that on replay, m_RenderState.renderTargets[] gets populated.
+  for(DWORD rt = 0; rt < D3D9_MAX_RENDER_TARGETS; rt++)
+  {
+    IDirect3DSurface9 *realRT = NULL;
+    m_pDevice->GetRenderTarget(rt, &realRT);
+    if(realRT)
+    {
+      if(GetResourceManager()->HasWrapper(realRT))
+      {
+        IDirect3DSurface9 *wrappedRT =
+            (IDirect3DSurface9 *)GetResourceManager()->GetWrapper(realRT);
+
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(wrappedRT);
+        if(info)
+          GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_ReadBeforeWrite);
+
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetRenderTarget);
+        Serialise_SetRenderTarget(ser, rt, wrappedRT);
+        m_DeviceRecord->AddChunk(scope.Get());
+      }
+      realRT->Release();
+    }
+  }
+
+  {
+    IDirect3DSurface9 *realDS = NULL;
+    m_pDevice->GetDepthStencilSurface(&realDS);
+    if(realDS)
+    {
+      if(GetResourceManager()->HasWrapper(realDS))
+      {
+        IDirect3DSurface9 *wrappedDS =
+            (IDirect3DSurface9 *)GetResourceManager()->GetWrapper(realDS);
+
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(wrappedDS);
+        if(info)
+          GetResourceManager()->MarkResourceFrameReferenced(info->id, eFrameRef_ReadBeforeWrite);
+
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetDepthStencilSurface);
+        Serialise_SetDepthStencilSurface(ser, wrappedDS);
+        m_DeviceRecord->AddChunk(scope.Get());
+      }
+      realDS->Release();
+    }
+  }
 }
 
 bool WrappedIDirect3DDevice9::EndFrameCapture(DeviceOwnedWindow devWnd)
@@ -3285,6 +3423,75 @@ RDResult WrappedIDirect3DDevice9::ReadLogInitialisation(RDCFile *rdc, bool store
       m_FrameReader = new StreamReader(reader, frameDataSize);
 
       GetResourceManager()->ApplyInitialContents();
+
+      // Replay-side fallback: if render target 0 is not set (because the capture was made
+      // before the capture-side fix that serializes initial RT/DS bindings, or the
+      // backbuffer surface was never explicitly created in the capture), create a synthetic
+      // render target surface and set it as the default output.
+      if(m_RenderState.renderTargets[0] == ResourceId())
+      {
+        // First try to find an existing surface resource that looks like the backbuffer
+        UINT bbWidth = m_InitParams.PresentationParameters.BackBufferWidth;
+        UINT bbHeight = m_InitParams.PresentationParameters.BackBufferHeight;
+        D3DFORMAT bbFormat = m_InitParams.PresentationParameters.BackBufferFormat;
+
+        ResourceId bestRT;
+        ResourceId bestDS;
+
+        const auto &resMap = GetResourceManager()->GetResourceMap();
+        for(auto it = resMap.begin(); it != resMap.end(); ++it)
+        {
+          IUnknown *res = it->second;
+          if(!res)
+            continue;
+
+          D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+          if(!info || info->type != D3D9WrappedType::Surface)
+            continue;
+
+          WrappedIDirect3DSurface9 *surf = (WrappedIDirect3DSurface9 *)res;
+          D3DSURFACE_DESC desc;
+          if(SUCCEEDED(surf->GetReal()->GetDesc(&desc)))
+          {
+            bool sizeMatch = (bbWidth > 0 && bbHeight > 0 && desc.Width == bbWidth &&
+                              desc.Height == bbHeight);
+
+            if(sizeMatch && (desc.Usage & D3DUSAGE_RENDERTARGET))
+              bestRT = it->first;
+            else if(sizeMatch && (desc.Usage & D3DUSAGE_DEPTHSTENCIL))
+              bestDS = it->first;
+          }
+        }
+
+        // If no existing surface found, create a synthetic backbuffer render target
+        if(bestRT == ResourceId() && bbWidth > 0 && bbHeight > 0)
+        {
+          if(bbFormat == D3DFMT_UNKNOWN)
+            bbFormat = D3DFMT_A8R8G8B8;
+
+          IDirect3DSurface9 *realRT = NULL;
+          HRESULT hr = m_pDevice->CreateRenderTarget(bbWidth, bbHeight, bbFormat,
+                                                     D3DMULTISAMPLE_NONE, 0, TRUE, &realRT, NULL);
+          if(SUCCEEDED(hr) && realRT)
+          {
+            WrappedIDirect3DSurface9 *wrapped = new WrappedIDirect3DSurface9(realRT, this);
+            bestRT = wrapped->GetResourceID();
+            RDCLOG("Replay fallback: created synthetic backbuffer RT %s (%ux%u)",
+                   ToStr(bestRT).c_str(), bbWidth, bbHeight);
+          }
+        }
+
+        if(bestRT != ResourceId())
+        {
+          m_RenderState.renderTargets[0] = bestRT;
+          RDCLOG("Replay fallback: set render target 0 to %s", ToStr(bestRT).c_str());
+        }
+        if(bestDS != ResourceId())
+        {
+          m_RenderState.depthStencil = bestDS;
+          RDCLOG("Replay fallback: set depth stencil to %s", ToStr(bestDS).c_str());
+        }
+      }
 
       // first-pass read of frame contents to build action list
       {

@@ -145,6 +145,7 @@ public:
 
   void SetFrameEvent(uint32_t eventId, bool force);
 
+  const D3D9Pipe::State *GetD3D9PipelineState();
   const D3D11Pipe::State *GetD3D11PipelineState();
   const D3D12Pipe::State *GetD3D12PipelineState();
   const GLPipe::State *GetGLPipelineState();
@@ -278,6 +279,7 @@ private:
 
   std::map<uint32_t, uint32_t> m_EventRemap;
 
+  D3D9Pipe::State m_D3D9PipelineState;
   D3D11Pipe::State m_D3D11PipelineState;
   D3D12Pipe::State m_D3D12PipelineState;
   GLPipe::State m_GLPipelineState;

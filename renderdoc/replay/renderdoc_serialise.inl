@@ -1233,6 +1233,241 @@ void DoSerialise(SerialiserType &ser, ShaderMessage &el)
 
 #pragma endregion
 
+#pragma region D3D9 pipeline state
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::VertexElement &el)
+{
+  SERIALISE_MEMBER(stream);
+  SERIALISE_MEMBER(offset);
+  SERIALISE_MEMBER(type);
+  SERIALISE_MEMBER(method);
+  SERIALISE_MEMBER(usage);
+  SERIALISE_MEMBER(usageIndex);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::VertexBuffer &el)
+{
+  SERIALISE_MEMBER(resourceId);
+  SERIALISE_MEMBER(byteOffset);
+  SERIALISE_MEMBER(byteStride);
+  SERIALISE_MEMBER(frequency);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::IndexBuffer &el)
+{
+  SERIALISE_MEMBER(resourceId);
+  SERIALISE_MEMBER(byteStride);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::InputAssembly &el)
+{
+  SERIALISE_MEMBER(vertexElements);
+  SERIALISE_MEMBER(FVF);
+  SERIALISE_MEMBER(vertexBuffers);
+  SERIALISE_MEMBER(indexBuffer);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::ShaderConstant &el)
+{
+  SERIALISE_MEMBER(floatConstants);
+  SERIALISE_MEMBER(intConstants);
+  SERIALISE_MEMBER(boolConstants);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::Shader &el)
+{
+  SERIALISE_MEMBER(resourceId);
+  SERIALISE_MEMBER(constants);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::Transform &el)
+{
+  SERIALISE_MEMBER(world);
+  SERIALISE_MEMBER(view);
+  SERIALISE_MEMBER(projection);
+  // texture is rdcfixedarray<rdcfixedarray<float,16>, 8> - serialize each element individually
+  for(int i = 0; i < 8; i++)
+    ser.Serialise("texture"_lit, el.texture[i]);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::Light &el)
+{
+  SERIALISE_MEMBER(type);
+  SERIALISE_MEMBER(diffuse);
+  SERIALISE_MEMBER(specular);
+  SERIALISE_MEMBER(ambient);
+  SERIALISE_MEMBER(position);
+  SERIALISE_MEMBER(direction);
+  SERIALISE_MEMBER(range);
+  SERIALISE_MEMBER(falloff);
+  SERIALISE_MEMBER(attenuation0);
+  SERIALISE_MEMBER(attenuation1);
+  SERIALISE_MEMBER(attenuation2);
+  SERIALISE_MEMBER(theta);
+  SERIALISE_MEMBER(phi);
+  SERIALISE_MEMBER(enabled);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::Material &el)
+{
+  SERIALISE_MEMBER(diffuse);
+  SERIALISE_MEMBER(specular);
+  SERIALISE_MEMBER(ambient);
+  SERIALISE_MEMBER(emissive);
+  SERIALISE_MEMBER(power);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::TextureStageState &el)
+{
+  SERIALISE_MEMBER(colorOp);
+  SERIALISE_MEMBER(colorArg1);
+  SERIALISE_MEMBER(colorArg2);
+  SERIALISE_MEMBER(alphaOp);
+  SERIALISE_MEMBER(alphaArg1);
+  SERIALISE_MEMBER(alphaArg2);
+  SERIALISE_MEMBER(texCoordIndex);
+  SERIALISE_MEMBER(textureTransformFlags);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::SamplerState &el)
+{
+  SERIALISE_MEMBER(addressU);
+  SERIALISE_MEMBER(addressV);
+  SERIALISE_MEMBER(addressW);
+  SERIALISE_MEMBER(magFilter);
+  SERIALISE_MEMBER(minFilter);
+  SERIALISE_MEMBER(mipFilter);
+  SERIALISE_MEMBER(maxAnisotropy);
+  SERIALISE_MEMBER(maxMipLevel);
+  SERIALISE_MEMBER(mipLODBias);
+  SERIALISE_MEMBER(sRGB);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::TextureStage &el)
+{
+  SERIALISE_MEMBER(texture);
+  SERIALISE_MEMBER(sampler);
+  SERIALISE_MEMBER(stageState);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::FixedFunction &el)
+{
+  SERIALISE_MEMBER(transforms);
+  SERIALISE_MEMBER(lights);
+  SERIALISE_MEMBER(material);
+  SERIALISE_MEMBER(lightingEnabled);
+  SERIALISE_MEMBER(fogEnabled);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::RenderState &el)
+{
+  SERIALISE_MEMBER(fillMode);
+  SERIALISE_MEMBER(cullMode);
+  SERIALISE_MEMBER(depthBias);
+  SERIALISE_MEMBER(slopeScaledDepthBias);
+  SERIALISE_MEMBER(scissorEnable);
+  SERIALISE_MEMBER(multisampleEnable);
+  SERIALISE_MEMBER(antialiasedLineEnable);
+  // clipPlanes is rdcfixedarray<rdcfixedarray<float,4>, 6> - serialize each element individually
+  for(int i = 0; i < 6; i++)
+    ser.Serialise("clipPlanes"_lit, el.clipPlanes[i]);
+  SERIALISE_MEMBER(clipPlaneEnable);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::BlendState &el)
+{
+  SERIALISE_MEMBER(alphaBlendEnable);
+  SERIALISE_MEMBER(srcBlend);
+  SERIALISE_MEMBER(destBlend);
+  SERIALISE_MEMBER(blendOp);
+  SERIALISE_MEMBER(separateAlphaBlendEnable);
+  SERIALISE_MEMBER(srcBlendAlpha);
+  SERIALISE_MEMBER(destBlendAlpha);
+  SERIALISE_MEMBER(blendOpAlpha);
+  SERIALISE_MEMBER(writeMask);
+  SERIALISE_MEMBER(alphaTestEnable);
+  SERIALISE_MEMBER(alphaFunc);
+  SERIALISE_MEMBER(alphaRef);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::DepthStencilState &el)
+{
+  SERIALISE_MEMBER(depthEnable);
+  SERIALISE_MEMBER(depthWrite);
+  SERIALISE_MEMBER(depthFunc);
+  SERIALISE_MEMBER(stencilEnable);
+  SERIALISE_MEMBER(stencilReadMask);
+  SERIALISE_MEMBER(stencilWriteMask);
+  SERIALISE_MEMBER(stencilRef);
+  SERIALISE_MEMBER(stencilFail);
+  SERIALISE_MEMBER(stencilZFail);
+  SERIALISE_MEMBER(stencilPass);
+  SERIALISE_MEMBER(stencilFunc);
+  SERIALISE_MEMBER(twoSidedStencil);
+  SERIALISE_MEMBER(ccwStencilFail);
+  SERIALISE_MEMBER(ccwStencilZFail);
+  SERIALISE_MEMBER(ccwStencilPass);
+  SERIALISE_MEMBER(ccwStencilFunc);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::OutputMerger &el)
+{
+  SERIALISE_MEMBER(blendState);
+  SERIALISE_MEMBER(depthStencilState);
+  SERIALISE_MEMBER(renderTargets);
+  SERIALISE_MEMBER(depthStencil);
+}
+
+template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D9Pipe::State &el)
+{
+  SERIALISE_MEMBER(inputAssembly);
+  SERIALISE_MEMBER(vertexShader);
+  SERIALISE_MEMBER(pixelShader);
+  SERIALISE_MEMBER(fixedFunction);
+  SERIALISE_MEMBER(textureStages);
+  SERIALISE_MEMBER(rasterizer);
+  SERIALISE_MEMBER(outputMerger);
+}
+
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::VertexElement)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::VertexBuffer)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::IndexBuffer)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::InputAssembly)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::ShaderConstant)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::Shader)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::Transform)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::Light)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::Material)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::TextureStageState)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::SamplerState)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::TextureStage)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::FixedFunction)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::RenderState)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::BlendState)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::DepthStencilState)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::OutputMerger)
+INSTANTIATE_SERIALISE_TYPE(D3D9Pipe::State)
+
+#pragma endregion D3D9 pipeline state
+
 #pragma region D3D11 pipeline state
 
 template <typename SerialiserType>

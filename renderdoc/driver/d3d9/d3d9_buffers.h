@@ -109,6 +109,7 @@ public:
 
   byte *GetShadowData() { return m_ShadowData; }
   UINT GetLength() { return m_Length; }
+  D3DFORMAT GetFormat() { return m_Format; }
 
   void IntAddRef() { Atomic::Inc32(&m_IntRef); }
   void IntRelease() { Atomic::Dec32(&m_IntRef); }

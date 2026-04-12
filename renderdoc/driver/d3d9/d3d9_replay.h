@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <map>
 #include "api/replay/renderdoc_replay.h"
 #include "api/replay/d3d9_pipestate.h"
 #include "core/core.h"
@@ -76,10 +77,10 @@ public:
   FrameRecord &WriteFrameRecord() { return m_FrameRecord; }
   FrameRecord GetFrameRecord() { return m_FrameRecord; }
 
-  void SetPipelineStates(D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12, GLPipe::State *gl,
-                         VKPipe::State *vk)
+  void SetPipelineStates(D3D9Pipe::State *d3d9, D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12,
+                         GLPipe::State *gl, VKPipe::State *vk)
   {
-    // D3D9 manages its own pipeline state; we ignore the other API pointers.
+    m_D3D9PipelineState = d3d9;
   }
   void SavePipelineState(uint32_t eventId);
 
@@ -205,15 +206,22 @@ public:
                       uint32_t x, uint32_t y);
 
 private:
+  ShaderReflection *GetShaderReflection(ResourceId shaderId);
+  ShaderReflection *BuildShaderReflection(ResourceId shaderId, const rdcarray<DWORD> &bytecode,
+                                          ShaderStage stage);
+
   WrappedIDirect3DDevice9 *m_pDevice;
   bool m_Proxy;
 
   DriverInformation m_DriverInfo;
 
-  D3D9Pipe::State m_PipeState;
+  D3D9Pipe::State *m_D3D9PipelineState = NULL;
 
   rdcarray<ResourceDescription> m_Resources;
   std::map<ResourceId, size_t> m_ResourceIdx;
+
+  // Cached shader reflections, keyed by shader ResourceId
+  std::map<ResourceId, ShaderReflection *> m_ShaderReflectionCache;
 
   FrameRecord m_FrameRecord;
 

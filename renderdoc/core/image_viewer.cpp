@@ -234,8 +234,8 @@ public:
   // handle a couple of operations ourselves to return a simple fake log
   APIProperties GetAPIProperties() { return m_Props; }
   FrameRecord GetFrameRecord() { return m_FrameRecord; }
-  void SetPipelineStates(D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12, GLPipe::State *gl,
-                         VKPipe::State *vk)
+  void SetPipelineStates(D3D9Pipe::State *d3d9, D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12,
+                         GLPipe::State *gl, VKPipe::State *vk)
   {
     d3d11->descriptorCount = 0;
     d3d11->descriptorByteSize = 0;

@@ -142,8 +142,9 @@ rdcarray<EventUsage> DummyDriver::GetUsage(ResourceId id)
   return {};
 }
 
-void DummyDriver::SetPipelineStates(D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12,
-                                    GLPipe::State *gl, VKPipe::State *vk)
+void DummyDriver::SetPipelineStates(D3D9Pipe::State *d3d9, D3D11Pipe::State *d3d11,
+                                    D3D12Pipe::State *d3d12, GLPipe::State *gl,
+                                    VKPipe::State *vk)
 {
 }
 

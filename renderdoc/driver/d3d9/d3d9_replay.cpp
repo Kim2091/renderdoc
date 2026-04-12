@@ -44,6 +44,10 @@ D3D9Replay::D3D9Replay(WrappedIDirect3DDevice9 *d)
 
 D3D9Replay::~D3D9Replay()
 {
+  for(auto it = m_ShaderReflectionCache.begin(); it != m_ShaderReflectionCache.end(); ++it)
+    delete it->second;
+  m_ShaderReflectionCache.clear();
+
   RenderDoc::Inst().UnregisterMemoryRegion(this);
 }
 
@@ -88,7 +92,7 @@ rdcarray<GPUDevice> D3D9Replay::GetAvailableGPUs()
   dev.deviceID = 0;
   dev.driver = "";
   dev.name = "Default D3D9 Adapter";
-  dev.apis = {GraphicsAPI::D3D11};    // closest match for UI purposes
+  dev.apis = {GraphicsAPI::D3D9};
   ret.push_back(dev);
 
   return ret;
@@ -98,8 +102,8 @@ APIProperties D3D9Replay::GetAPIProperties()
 {
   APIProperties ret = {};
 
-  ret.pipelineType = GraphicsAPI::D3D11;    // D3D9 is not a separate enum; use D3D11 as proxy
-  ret.localRenderer = GraphicsAPI::D3D11;
+  ret.pipelineType = GraphicsAPI::D3D9;
+  ret.localRenderer = GraphicsAPI::D3D9;
   ret.vendor = m_DriverInfo.vendor;
   ret.degraded = false;
   ret.shaderDebugging = false;
@@ -416,12 +420,781 @@ rdcarray<DebugMessage> D3D9Replay::GetDebugMessages()
 // Shaders
 ////////////////////////////////////////////////////////////////
 
+// SM1-3 bytecode register type constants (from D3D9 shader bytecode spec)
+// These are extracted from bits [28..31] of source/dest parameter tokens,
+// with bit [11] providing the 5th bit for SM2+.
+enum D3D9RegType
+{
+  D3D9_REG_TEMP = 0,
+  D3D9_REG_INPUT = 1,
+  D3D9_REG_CONST = 2,
+  D3D9_REG_ADDR_TEXTURE = 3,    // address reg in VS, texture coord in PS
+  D3D9_REG_RASTOUT = 4,
+  D3D9_REG_ATTROUT = 5,
+  D3D9_REG_TEXCRDOUT = 6,    // also output in VS SM3
+  D3D9_REG_OUTPUT = 6,
+  D3D9_REG_CONSTINT = 7,
+  D3D9_REG_COLOROUT = 8,
+  D3D9_REG_DEPTHOUT = 9,
+  D3D9_REG_SAMPLER = 10,
+  D3D9_REG_CONST2 = 11,
+  D3D9_REG_CONST3 = 12,
+  D3D9_REG_CONST4 = 13,
+  D3D9_REG_CONSTBOOL = 14,
+  D3D9_REG_LOOP = 15,
+  D3D9_REG_TEMPFLOAT16 = 16,
+  D3D9_REG_MISCTYPE = 17,
+  D3D9_REG_LABEL = 18,
+  D3D9_REG_PREDICATE = 19,
+};
+
+// SM1-3 bytecode opcode constants (lower 16 bits of instruction token)
+enum D3D9Opcode
+{
+  D3D9_OP_NOP = 0,
+  D3D9_OP_MOV = 1,
+  D3D9_OP_ADD = 2,
+  D3D9_OP_SUB = 3,
+  D3D9_OP_MAD = 4,
+  D3D9_OP_MUL = 5,
+  D3D9_OP_RCP = 6,
+  D3D9_OP_RSQ = 7,
+  D3D9_OP_DP3 = 8,
+  D3D9_OP_DP4 = 9,
+  D3D9_OP_MIN = 10,
+  D3D9_OP_MAX = 11,
+  D3D9_OP_SLT = 12,
+  D3D9_OP_SGE = 13,
+  D3D9_OP_EXP = 14,
+  D3D9_OP_LOG = 15,
+  D3D9_OP_LIT = 16,
+  D3D9_OP_DST = 17,
+  D3D9_OP_LRP = 18,
+  D3D9_OP_FRC = 19,
+  D3D9_OP_DCL = 31,
+  D3D9_OP_POW = 32,
+  D3D9_OP_ABS = 35,
+  D3D9_OP_NRM = 36,
+  D3D9_OP_SINCOS = 37,
+  D3D9_OP_DEF = 40,
+  D3D9_OP_DEFI = 42,
+  D3D9_OP_DEFB = 45,
+  D3D9_OP_TEX = 66,       // texld in SM2+
+  D3D9_OP_TEXLDL = 93,
+  D3D9_OP_END = 0xFFFF,
+  D3D9_OP_COMMENT = 0xFFFE,
+};
+
+// SM1-3 DCL usage values (for dcl instructions)
+enum D3D9DeclUsage
+{
+  D3D9_DECL_POSITION = 0,
+  D3D9_DECL_BLENDWEIGHT = 1,
+  D3D9_DECL_BLENDINDICES = 2,
+  D3D9_DECL_NORMAL = 3,
+  D3D9_DECL_PSIZE = 4,
+  D3D9_DECL_TEXCOORD = 5,
+  D3D9_DECL_TANGENT = 6,
+  D3D9_DECL_BINORMAL = 7,
+  D3D9_DECL_TESSFACTOR = 8,
+  D3D9_DECL_POSITIONT = 9,
+  D3D9_DECL_COLOR = 10,
+  D3D9_DECL_FOG = 11,
+  D3D9_DECL_DEPTH = 12,
+  D3D9_DECL_SAMPLE = 13,
+};
+
+// SM1-3 sampler type (from DCL token bits [27..30])
+enum D3D9SamplerType
+{
+  D3D9_SAMPLER_UNKNOWN = 0,
+  D3D9_SAMPLER_2D = 2,
+  D3D9_SAMPLER_CUBE = 3,
+  D3D9_SAMPLER_VOLUME = 4,
+};
+
+static uint32_t D3D9_GetRegType(DWORD token)
+{
+  // bits [28..31] are the low 4 bits, bit [11] is the high bit (SM2+ extension)
+  uint32_t low = (token >> 28) & 0xF;
+  uint32_t high = (token >> 11) & 0x1;
+  return low | (high << 4);
+}
+
+static uint32_t D3D9_GetRegNum(DWORD token)
+{
+  return token & 0x7FF;
+}
+
+static uint32_t D3D9_GetWriteMask(DWORD token)
+{
+  return (token >> 16) & 0xF;
+}
+
+static const char *D3D9_DeclUsageName(uint32_t usage)
+{
+  switch(usage)
+  {
+    case D3D9_DECL_POSITION: return "POSITION";
+    case D3D9_DECL_BLENDWEIGHT: return "BLENDWEIGHT";
+    case D3D9_DECL_BLENDINDICES: return "BLENDINDICES";
+    case D3D9_DECL_NORMAL: return "NORMAL";
+    case D3D9_DECL_PSIZE: return "PSIZE";
+    case D3D9_DECL_TEXCOORD: return "TEXCOORD";
+    case D3D9_DECL_TANGENT: return "TANGENT";
+    case D3D9_DECL_BINORMAL: return "BINORMAL";
+    case D3D9_DECL_TESSFACTOR: return "TESSFACTOR";
+    case D3D9_DECL_POSITIONT: return "POSITIONT";
+    case D3D9_DECL_COLOR: return "COLOR";
+    case D3D9_DECL_FOG: return "FOG";
+    case D3D9_DECL_DEPTH: return "DEPTH";
+    case D3D9_DECL_SAMPLE: return "SAMPLE";
+    default: return "UNKNOWN";
+  }
+}
+
+static uint32_t D3D9_WriteMaskCompCount(uint32_t mask)
+{
+  uint32_t count = 0;
+  if(mask & 0x1)
+    count++;
+  if(mask & 0x2)
+    count++;
+  if(mask & 0x4)
+    count++;
+  if(mask & 0x8)
+    count++;
+  return count;
+}
+
+ShaderReflection *D3D9Replay::BuildShaderReflection(ResourceId shaderId,
+                                                    const rdcarray<DWORD> &bytecode,
+                                                    ShaderStage stage)
+{
+  if(bytecode.empty())
+    return NULL;
+
+  ShaderReflection *refl = new ShaderReflection;
+  refl->resourceId = shaderId;
+  refl->entryPoint = "main";
+  refl->stage = stage;
+  refl->encoding = ShaderEncoding::DXBC;    // SM1-3 bytecode is the precursor to DXBC
+
+  // Store raw bytecode
+  refl->rawBytes.resize(bytecode.count() * sizeof(DWORD));
+  memcpy(refl->rawBytes.data(), bytecode.data(), refl->rawBytes.size());
+
+  const DWORD *tokens = bytecode.data();
+  size_t numTokens = bytecode.count();
+
+  if(numTokens < 1)
+  {
+    delete refl;
+    return NULL;
+  }
+
+  // First token is the version token
+  DWORD versionToken = tokens[0];
+  uint32_t shaderMajor = (versionToken >> 8) & 0xFF;
+  uint32_t shaderMinor = versionToken & 0xFF;
+  bool isPS = ((versionToken >> 16) & 0xFFFF) == 0xFFFF;
+  bool isVS = ((versionToken >> 16) & 0xFFFF) == 0xFFFE;
+
+  (void)shaderMinor;
+
+  // Override stage based on actual shader type in bytecode
+  if(isPS)
+    refl->stage = ShaderStage::Pixel;
+  else if(isVS)
+    refl->stage = ShaderStage::Vertex;
+
+  // Track which registers are used, for building reflection data.
+  // For DCL instructions, we track usage/index. For other instructions we track
+  // register reads/writes to detect used float/int/bool constants and samplers.
+
+  struct DeclInfo
+  {
+    uint32_t regType;
+    uint32_t regNum;
+    uint32_t usage;
+    uint32_t usageIndex;
+    uint32_t writeMask;
+    uint32_t samplerType;    // for sampler DCLs
+  };
+
+  rdcarray<DeclInfo> inputDecls;
+  rdcarray<DeclInfo> outputDecls;
+  rdcarray<DeclInfo> samplerDecls;
+
+  // Track highest constant register index used for float/int/bool constants
+  uint32_t maxFloatConstUsed = 0;
+  uint32_t maxIntConstUsed = 0;
+  uint32_t maxBoolConstUsed = 0;
+  bool hasFloatConsts = false;
+  bool hasIntConsts = false;
+  bool hasBoolConsts = false;
+
+  // Track which sampler registers are referenced by tex* instructions
+  bool samplerUsed[16] = {};
+
+  size_t i = 1;    // skip version token
+  while(i < numTokens)
+  {
+    DWORD instrToken = tokens[i];
+
+    // Check for END token
+    if(instrToken == 0x0000FFFF)
+      break;
+
+    uint32_t opcode = instrToken & 0xFFFF;
+
+    // Comment block - skip
+    if(opcode == D3D9_OP_COMMENT)
+    {
+      uint32_t commentLen = (instrToken >> 16) & 0x7FFF;
+      i += 1 + commentLen;
+      continue;
+    }
+
+    // Number of additional tokens after the instruction token
+    // For SM2+, instruction length is encoded in bits [24..27] for most opcodes
+    uint32_t instrLen = 0;
+    if(shaderMajor >= 2)
+    {
+      instrLen = ((instrToken >> 24) & 0xF);
+    }
+
+    // Handle specific opcodes
+    if(opcode == D3D9_OP_DCL && i + 2 < numTokens)
+    {
+      DWORD dclToken = tokens[i + 1];
+      DWORD dstToken = tokens[i + 2];
+
+      uint32_t regType = D3D9_GetRegType(dstToken);
+      uint32_t regNum = D3D9_GetRegNum(dstToken);
+      uint32_t writeMask = D3D9_GetWriteMask(dstToken);
+
+      DeclInfo dcl;
+      dcl.regType = regType;
+      dcl.regNum = regNum;
+      dcl.usage = dclToken & 0x1F;
+      dcl.usageIndex = (dclToken >> 16) & 0xF;
+      dcl.writeMask = writeMask;
+      dcl.samplerType = (dclToken >> 27) & 0xF;
+
+      if(regType == D3D9_REG_INPUT)
+      {
+        inputDecls.push_back(dcl);
+      }
+      else if(regType == D3D9_REG_SAMPLER)
+      {
+        samplerDecls.push_back(dcl);
+        if(regNum < 16)
+          samplerUsed[regNum] = true;
+      }
+      else if(regType == D3D9_REG_OUTPUT || regType == D3D9_REG_TEXCRDOUT ||
+              regType == D3D9_REG_ATTROUT || regType == D3D9_REG_COLOROUT ||
+              regType == D3D9_REG_DEPTHOUT || regType == D3D9_REG_RASTOUT)
+      {
+        outputDecls.push_back(dcl);
+      }
+      else if(regType == D3D9_REG_ADDR_TEXTURE && isPS)
+      {
+        // In pixel shaders, dcl of texture coordinate registers are inputs
+        inputDecls.push_back(dcl);
+      }
+
+      i += 3;
+      continue;
+    }
+    else if(opcode == D3D9_OP_DEF && i + 5 <= numTokens)
+    {
+      // def cN, x, y, z, w  --  5 tokens total (instr + dst + 4 floats)
+      DWORD dstToken = tokens[i + 1];
+      uint32_t regNum = D3D9_GetRegNum(dstToken);
+      if(regNum + 1 > maxFloatConstUsed)
+        maxFloatConstUsed = regNum + 1;
+      hasFloatConsts = true;
+      i += 5;
+      continue;
+    }
+    else if(opcode == D3D9_OP_DEFI && i + 5 <= numTokens)
+    {
+      DWORD dstToken = tokens[i + 1];
+      uint32_t regNum = D3D9_GetRegNum(dstToken);
+      if(regNum + 1 > maxIntConstUsed)
+        maxIntConstUsed = regNum + 1;
+      hasIntConsts = true;
+      i += 5;
+      continue;
+    }
+    else if(opcode == D3D9_OP_DEFB && i + 2 < numTokens)
+    {
+      DWORD dstToken = tokens[i + 1];
+      uint32_t regNum = D3D9_GetRegNum(dstToken);
+      if(regNum + 1 > maxBoolConstUsed)
+        maxBoolConstUsed = regNum + 1;
+      hasBoolConsts = true;
+      i += 3;
+      continue;
+    }
+
+    // For non-DCL/DEF instructions, scan all operand tokens for constant register references
+    if(shaderMajor >= 2 && instrLen > 0)
+    {
+      for(uint32_t t = 1; t <= instrLen && (i + t) < numTokens; t++)
+      {
+        DWORD paramToken = tokens[i + t];
+        // Skip if this is an addressing mode token (bit 13 set in the previous token is relative)
+        uint32_t regType = D3D9_GetRegType(paramToken);
+        uint32_t regNum = D3D9_GetRegNum(paramToken);
+
+        switch(regType)
+        {
+          case D3D9_REG_CONST:
+          case D3D9_REG_CONST2:
+          case D3D9_REG_CONST3:
+          case D3D9_REG_CONST4:
+          {
+            uint32_t actualReg = regNum;
+            if(regType == D3D9_REG_CONST2)
+              actualReg += 2048;
+            else if(regType == D3D9_REG_CONST3)
+              actualReg += 4096;
+            else if(regType == D3D9_REG_CONST4)
+              actualReg += 6144;
+            if(actualReg + 1 > maxFloatConstUsed)
+              maxFloatConstUsed = actualReg + 1;
+            hasFloatConsts = true;
+            break;
+          }
+          case D3D9_REG_CONSTINT:
+            if(regNum + 1 > maxIntConstUsed)
+              maxIntConstUsed = regNum + 1;
+            hasIntConsts = true;
+            break;
+          case D3D9_REG_CONSTBOOL:
+            if(regNum + 1 > maxBoolConstUsed)
+              maxBoolConstUsed = regNum + 1;
+            hasBoolConsts = true;
+            break;
+          case D3D9_REG_SAMPLER:
+            if(regNum < 16)
+              samplerUsed[regNum] = true;
+            break;
+          default: break;
+        }
+      }
+
+      i += 1 + instrLen;
+      continue;
+    }
+
+    // SM1 instructions or unrecognised - skip based on opcode heuristic
+    // SM1 has fixed instruction lengths per opcode. For safety, advance by 1
+    // and rely on end token detection.
+    if(shaderMajor < 2)
+    {
+      // For SM1, scan operand tokens for constant references too
+      // SM1 instruction layout: dest param tokens have bit 31 set to 1,
+      // source param tokens also have bit 31 set to 1, instruction token has bit 31 = 0.
+      // We scan forward until we hit the next instruction token (bit 31 == 0) or END.
+      size_t j = i + 1;
+      while(j < numTokens && (tokens[j] & 0x80000000))
+      {
+        DWORD paramToken = tokens[j];
+        uint32_t regType = D3D9_GetRegType(paramToken);
+        uint32_t regNum = D3D9_GetRegNum(paramToken);
+
+        switch(regType)
+        {
+          case D3D9_REG_CONST:
+            if(regNum + 1 > maxFloatConstUsed)
+              maxFloatConstUsed = regNum + 1;
+            hasFloatConsts = true;
+            break;
+          case D3D9_REG_CONSTINT:
+            if(regNum + 1 > maxIntConstUsed)
+              maxIntConstUsed = regNum + 1;
+            hasIntConsts = true;
+            break;
+          case D3D9_REG_CONSTBOOL:
+            if(regNum + 1 > maxBoolConstUsed)
+              maxBoolConstUsed = regNum + 1;
+            hasBoolConsts = true;
+            break;
+          case D3D9_REG_SAMPLER:
+            if(regNum < 16)
+              samplerUsed[regNum] = true;
+            break;
+          default: break;
+        }
+        j++;
+      }
+      i = j;
+      continue;
+    }
+
+    // Fallback: advance past instruction
+    i += 1 + instrLen;
+  }
+
+  // Build input signature from DCL'd input registers
+  for(size_t d = 0; d < inputDecls.size(); d++)
+  {
+    const DeclInfo &dcl = inputDecls[d];
+    SigParameter sig;
+
+    sig.semanticName = D3D9_DeclUsageName(dcl.usage);
+    sig.semanticIndex = (uint16_t)dcl.usageIndex;
+    if(dcl.usageIndex > 0)
+      sig.semanticIdxName = StringFormat::Fmt("%s%u", sig.semanticName.c_str(), dcl.usageIndex);
+    else
+      sig.semanticIdxName = sig.semanticName;
+    sig.needSemanticIndex = (dcl.usageIndex > 0);
+    sig.varName = sig.semanticIdxName;
+
+    sig.regIndex = dcl.regNum;
+    sig.varType = VarType::Float;
+    sig.regChannelMask = (uint8_t)(dcl.writeMask & 0xF);
+    sig.channelUsedMask = sig.regChannelMask;
+    sig.compCount = D3D9_WriteMaskCompCount(dcl.writeMask);
+
+    // Map semantics to system values
+    if(dcl.usage == D3D9_DECL_POSITION)
+      sig.systemValue = ShaderBuiltin::Position;
+    else if(dcl.usage == D3D9_DECL_PSIZE)
+      sig.systemValue = ShaderBuiltin::PointSize;
+    else
+      sig.systemValue = ShaderBuiltin::Undefined;
+
+    refl->inputSignature.push_back(sig);
+  }
+
+  // Build output signature
+  // For SM3 VS, output registers have DCL. For PS, outputs are color/depth registers.
+  for(size_t d = 0; d < outputDecls.size(); d++)
+  {
+    const DeclInfo &dcl = outputDecls[d];
+    SigParameter sig;
+
+    if(dcl.regType == D3D9_REG_COLOROUT)
+    {
+      sig.semanticName = "SV_Target";
+      sig.semanticIndex = (uint16_t)dcl.regNum;
+      sig.systemValue = ShaderBuiltin::ColorOutput;
+    }
+    else if(dcl.regType == D3D9_REG_DEPTHOUT)
+    {
+      sig.semanticName = "SV_Depth";
+      sig.semanticIndex = 0;
+      sig.systemValue = ShaderBuiltin::DepthOutput;
+    }
+    else if(dcl.regType == D3D9_REG_RASTOUT)
+    {
+      // rastout #0 = position, #1 = fog, #2 = point size
+      if(dcl.regNum == 0)
+      {
+        sig.semanticName = "SV_Position";
+        sig.systemValue = ShaderBuiltin::Position;
+      }
+      else if(dcl.regNum == 1)
+      {
+        sig.semanticName = "FOG";
+        sig.systemValue = ShaderBuiltin::Undefined;
+      }
+      else
+      {
+        sig.semanticName = "PSIZE";
+        sig.systemValue = ShaderBuiltin::PointSize;
+      }
+      sig.semanticIndex = 0;
+    }
+    else
+    {
+      sig.semanticName = D3D9_DeclUsageName(dcl.usage);
+      sig.semanticIndex = (uint16_t)dcl.usageIndex;
+      if(dcl.usage == D3D9_DECL_POSITION)
+        sig.systemValue = ShaderBuiltin::Position;
+      else
+        sig.systemValue = ShaderBuiltin::Undefined;
+    }
+
+    if(sig.semanticIndex > 0)
+      sig.semanticIdxName =
+          StringFormat::Fmt("%s%u", sig.semanticName.c_str(), sig.semanticIndex);
+    else
+      sig.semanticIdxName = sig.semanticName;
+    sig.needSemanticIndex = (sig.semanticIndex > 0);
+    sig.varName = sig.semanticIdxName;
+
+    sig.regIndex = dcl.regNum;
+    sig.varType = VarType::Float;
+    sig.regChannelMask = (uint8_t)(dcl.writeMask & 0xF);
+    sig.channelUsedMask = sig.regChannelMask;
+    sig.compCount = D3D9_WriteMaskCompCount(dcl.writeMask);
+
+    refl->outputSignature.push_back(sig);
+  }
+
+  // For PS with no explicit output DCLs (SM < 3), synthesize color output
+  if(isPS && refl->outputSignature.empty())
+  {
+    SigParameter sig;
+    sig.semanticName = "SV_Target";
+    sig.semanticIdxName = "SV_Target";
+    sig.semanticIndex = 0;
+    sig.regIndex = 0;
+    sig.systemValue = ShaderBuiltin::ColorOutput;
+    sig.varType = VarType::Float;
+    sig.regChannelMask = 0xF;
+    sig.channelUsedMask = 0xF;
+    sig.compCount = 4;
+    refl->outputSignature.push_back(sig);
+  }
+
+  // For VS with no explicit output DCLs (SM < 3), synthesize position output
+  if(isVS && refl->outputSignature.empty())
+  {
+    SigParameter sig;
+    sig.semanticName = "SV_Position";
+    sig.semanticIdxName = "SV_Position";
+    sig.semanticIndex = 0;
+    sig.regIndex = 0;
+    sig.systemValue = ShaderBuiltin::Position;
+    sig.varType = VarType::Float;
+    sig.regChannelMask = 0xF;
+    sig.channelUsedMask = 0xF;
+    sig.compCount = 4;
+    refl->outputSignature.push_back(sig);
+  }
+
+  // Build constant blocks
+  // D3D9 has three types of constants: float (c registers), int (i registers), bool (b registers)
+  uint32_t cbufSlot = 0;
+
+  // Clamp to hardware limits
+  uint32_t maxF = isVS ? D3D9_MAX_VS_CONSTANTS_F : D3D9_MAX_PS_CONSTANTS_F;
+  uint32_t maxI = isVS ? D3D9_MAX_VS_CONSTANTS_I : D3D9_MAX_PS_CONSTANTS_I;
+  uint32_t maxB = isVS ? D3D9_MAX_VS_CONSTANTS_B : D3D9_MAX_PS_CONSTANTS_B;
+
+  if(maxFloatConstUsed > maxF)
+    maxFloatConstUsed = maxF;
+  if(maxIntConstUsed > maxI)
+    maxIntConstUsed = maxI;
+  if(maxBoolConstUsed > maxB)
+    maxBoolConstUsed = maxB;
+
+  // Always expose float constants if the shader exists - even if we did not detect
+  // explicit constant references the application may still set them via SetXxxShaderConstantF.
+  // Use the full hardware limit so the UI can display all possible registers.
+  {
+    ConstantBlock cb;
+    cb.name = "Float Constants";
+    cb.bufferBacked = false;
+    cb.fixedBindNumber = cbufSlot++;
+    cb.byteSize = maxF * 4 * sizeof(float);
+
+    for(uint32_t c = 0; c < maxF; c++)
+    {
+      ShaderConstant var;
+      var.name = StringFormat::Fmt("c%u", c);
+      var.byteOffset = c * 4 * sizeof(float);
+      var.type.baseType = VarType::Float;
+      var.type.rows = 1;
+      var.type.columns = 4;
+      var.type.elements = 1;
+      var.type.flags = ShaderVariableFlags::RowMajorMatrix;
+      cb.variables.push_back(var);
+    }
+
+    refl->constantBlocks.push_back(cb);
+  }
+
+  // Int constants
+  {
+    ConstantBlock cb;
+    cb.name = "Int Constants";
+    cb.bufferBacked = false;
+    cb.fixedBindNumber = cbufSlot++;
+    cb.byteSize = maxI * 4 * sizeof(int32_t);
+
+    for(uint32_t c = 0; c < maxI; c++)
+    {
+      ShaderConstant var;
+      var.name = StringFormat::Fmt("i%u", c);
+      var.byteOffset = c * 4 * sizeof(int32_t);
+      var.type.baseType = VarType::SInt;
+      var.type.rows = 1;
+      var.type.columns = 4;
+      var.type.elements = 1;
+      var.type.flags = ShaderVariableFlags::RowMajorMatrix;
+      cb.variables.push_back(var);
+    }
+
+    refl->constantBlocks.push_back(cb);
+  }
+
+  // Bool constants
+  {
+    ConstantBlock cb;
+    cb.name = "Bool Constants";
+    cb.bufferBacked = false;
+    cb.fixedBindNumber = cbufSlot++;
+    cb.byteSize = maxB * sizeof(uint32_t);
+
+    for(uint32_t c = 0; c < maxB; c++)
+    {
+      ShaderConstant var;
+      var.name = StringFormat::Fmt("b%u", c);
+      var.byteOffset = c * sizeof(uint32_t);
+      var.type.baseType = VarType::Bool;
+      var.type.rows = 1;
+      var.type.columns = 1;
+      var.type.elements = 1;
+      var.type.flags = ShaderVariableFlags::RowMajorMatrix;
+      cb.variables.push_back(var);
+    }
+
+    refl->constantBlocks.push_back(cb);
+  }
+
+  // Build sampler/texture resources from DCL'd samplers and detected sampler usage
+  for(size_t d = 0; d < samplerDecls.size(); d++)
+  {
+    const DeclInfo &dcl = samplerDecls[d];
+
+    ShaderResource res;
+    res.name = StringFormat::Fmt("s%u", dcl.regNum);
+    res.fixedBindNumber = dcl.regNum;
+    res.isTexture = true;
+    res.hasSampler = true;
+    res.isReadOnly = true;
+    res.isInputAttachment = false;
+    res.descriptorType = DescriptorType::ImageSampler;
+
+    switch(dcl.samplerType)
+    {
+      case D3D9_SAMPLER_2D: res.textureType = TextureType::Texture2D; break;
+      case D3D9_SAMPLER_CUBE: res.textureType = TextureType::TextureCube; break;
+      case D3D9_SAMPLER_VOLUME: res.textureType = TextureType::Texture3D; break;
+      default: res.textureType = TextureType::Texture2D; break;
+    }
+
+    refl->readOnlyResources.push_back(res);
+
+    // Also add a corresponding sampler entry
+    ShaderSampler sam;
+    sam.name = res.name;
+    sam.fixedBindNumber = dcl.regNum;
+    refl->samplers.push_back(sam);
+  }
+
+  // If no DCL'd samplers but tex* instructions reference samplers, create entries for them
+  for(uint32_t s = 0; s < 16; s++)
+  {
+    if(!samplerUsed[s])
+      continue;
+
+    // Check if this sampler was already declared
+    bool alreadyDeclared = false;
+    for(size_t d = 0; d < samplerDecls.size(); d++)
+    {
+      if(samplerDecls[d].regNum == s)
+      {
+        alreadyDeclared = true;
+        break;
+      }
+    }
+    if(alreadyDeclared)
+      continue;
+
+    ShaderResource res;
+    res.name = StringFormat::Fmt("s%u", s);
+    res.fixedBindNumber = s;
+    res.isTexture = true;
+    res.hasSampler = true;
+    res.isReadOnly = true;
+    res.isInputAttachment = false;
+    res.descriptorType = DescriptorType::ImageSampler;
+    res.textureType = TextureType::Texture2D;    // default assumption
+    refl->readOnlyResources.push_back(res);
+
+    ShaderSampler sam;
+    sam.name = res.name;
+    sam.fixedBindNumber = s;
+    refl->samplers.push_back(sam);
+  }
+
+  return refl;
+}
+
+ShaderReflection *D3D9Replay::GetShaderReflection(ResourceId shaderId)
+{
+  if(shaderId == ResourceId())
+    return NULL;
+
+  auto it = m_ShaderReflectionCache.find(shaderId);
+  if(it != m_ShaderReflectionCache.end())
+    return it->second;
+
+  // Look up the shader resource and get its bytecode
+  D3D9ResourceManager *rm = m_pDevice->GetResourceManager();
+  if(!rm->HasResource(shaderId))
+  {
+    m_ShaderReflectionCache[shaderId] = NULL;
+    return NULL;
+  }
+
+  IUnknown *res = rm->GetResource(shaderId);
+  if(!res)
+  {
+    m_ShaderReflectionCache[shaderId] = NULL;
+    return NULL;
+  }
+
+  // Use QI to determine if this is a vertex or pixel shader
+  D3D9WrappedInfo *info = NULL;
+  HRESULT hr = res->QueryInterface(IID_ID3D9WrappedResource, (void **)&info);
+  if(FAILED(hr) || !info)
+  {
+    m_ShaderReflectionCache[shaderId] = NULL;
+    return NULL;
+  }
+
+  ShaderReflection *refl = NULL;
+
+  if(info->type == D3D9WrappedType::VertexShader)
+  {
+    WrappedIDirect3DVertexShader9 *vs = (WrappedIDirect3DVertexShader9 *)res;
+    const rdcarray<DWORD> &bytecode = vs->GetBytecode();
+    refl = BuildShaderReflection(shaderId, bytecode, ShaderStage::Vertex);
+  }
+  else if(info->type == D3D9WrappedType::PixelShader)
+  {
+    WrappedIDirect3DPixelShader9 *ps = (WrappedIDirect3DPixelShader9 *)res;
+    const rdcarray<DWORD> &bytecode = ps->GetBytecode();
+    refl = BuildShaderReflection(shaderId, bytecode, ShaderStage::Pixel);
+  }
+
+  m_ShaderReflectionCache[shaderId] = refl;
+  return refl;
+}
+
 rdcarray<ShaderEntryPoint> D3D9Replay::GetShaderEntryPoints(ResourceId shader)
 {
   rdcarray<ShaderEntryPoint> ret;
+
+  ShaderStage stage = ShaderStage::Vertex;
+
+  // Try to determine the actual shader stage from the resource
+  ShaderReflection *refl = GetShaderReflection(shader);
+  if(refl)
+    stage = refl->stage;
+
   ShaderEntryPoint entry;
   entry.name = "main";
-  entry.stage = ShaderStage::Vertex;    // will be overridden when we can tell VS from PS
+  entry.stage = stage;
   ret.push_back(entry);
   return ret;
 }
@@ -429,7 +1202,7 @@ rdcarray<ShaderEntryPoint> D3D9Replay::GetShaderEntryPoints(ResourceId shader)
 const ShaderReflection *D3D9Replay::GetShader(ResourceId pipeline, ResourceId shader,
                                               ShaderEntryPoint entry)
 {
-  return NULL;
+  return GetShaderReflection(shader);
 }
 
 rdcarray<rdcstr> D3D9Replay::GetDisassemblyTargets(bool withPipeline)
@@ -456,6 +1229,11 @@ rdcarray<EventUsage> D3D9Replay::GetUsage(ResourceId id)
 
 void D3D9Replay::SavePipelineState(uint32_t eventId)
 {
+  if(!m_D3D9PipelineState)
+    return;
+
+  D3D9Pipe::State &m_PipeState = *m_D3D9PipelineState;
+
   const D3D9RenderState &rs = m_pDevice->GetRenderState();
 
   // Input Assembly
@@ -463,27 +1241,69 @@ void D3D9Replay::SavePipelineState(uint32_t eventId)
   m_PipeState.inputAssembly.vertexElements.clear();
   m_PipeState.inputAssembly.vertexBuffers.clear();
 
-  // Populate vertex buffers from stream sources
+  // Populate vertex elements from vertex declaration
+  if(rs.vertexDecl != ResourceId())
+  {
+    IUnknown *res = m_pDevice->GetResourceManager()->GetResource(rs.vertexDecl);
+    if(res)
+    {
+      WrappedIDirect3DVertexDeclaration9 *decl =
+          static_cast<WrappedIDirect3DVertexDeclaration9 *>((IDirect3DVertexDeclaration9 *)res);
+      const rdcarray<D3DVERTEXELEMENT9> &elems = decl->GetElements();
+      for(int i = 0; i < elems.count(); i++)
+      {
+        // Skip the end sentinel element (stream=0xFF, type=D3DDECLTYPE_UNUSED=17)
+        if(elems[i].Stream == 0xFF || elems[i].Type == 17)
+          break;
+        D3D9Pipe::VertexElement ve;
+        ve.stream = elems[i].Stream;
+        ve.offset = elems[i].Offset;
+        ve.type = elems[i].Type;
+        ve.method = elems[i].Method;
+        ve.usage = elems[i].Usage;
+        ve.usageIndex = elems[i].UsageIndex;
+        m_PipeState.inputAssembly.vertexElements.push_back(ve);
+      }
+    }
+  }
+
+  // Populate vertex buffers from stream sources - include ALL streams so indices match
   for(UINT i = 0; i < D3D9_MAX_STREAMS; i++)
   {
-    if(rs.streamSources[i].buffer != ResourceId())
-    {
-      D3D9Pipe::VertexBuffer vb;
-      vb.resourceId = rs.streamSources[i].buffer;
-      vb.byteOffset = rs.streamSources[i].offsetInBytes;
-      vb.byteStride = rs.streamSources[i].stride;
-      vb.frequency = rs.streamSources[i].freq;
-      m_PipeState.inputAssembly.vertexBuffers.push_back(vb);
-    }
+    D3D9Pipe::VertexBuffer vb;
+    vb.resourceId = rs.streamSources[i].buffer;
+    vb.byteOffset = rs.streamSources[i].offsetInBytes;
+    vb.byteStride = rs.streamSources[i].stride;
+    vb.frequency = rs.streamSources[i].freq;
+    m_PipeState.inputAssembly.vertexBuffers.push_back(vb);
   }
 
   // Index buffer
   m_PipeState.inputAssembly.indexBuffer.resourceId = rs.indices;
-  m_PipeState.inputAssembly.indexBuffer.byteStride = 0;    // determined at draw time
+
+  // Determine index buffer stride from the index buffer's D3DFORMAT
+  m_PipeState.inputAssembly.indexBuffer.byteStride = 0;
+  if(rs.indices != ResourceId())
+  {
+    IUnknown *ibRes = m_pDevice->GetResourceManager()->GetResource(rs.indices);
+    if(ibRes)
+    {
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(ibRes);
+      if(info && info->type == D3D9WrappedType::IndexBuffer)
+      {
+        WrappedIDirect3DIndexBuffer9 *ib = (WrappedIDirect3DIndexBuffer9 *)ibRes;
+        D3DFORMAT fmt = ib->GetFormat();
+        if(fmt == D3DFMT_INDEX16)
+          m_PipeState.inputAssembly.indexBuffer.byteStride = 2;
+        else if(fmt == D3DFMT_INDEX32)
+          m_PipeState.inputAssembly.indexBuffer.byteStride = 4;
+      }
+    }
+  }
 
   // Vertex shader
   m_PipeState.vertexShader.resourceId = rs.vertexShader;
-  m_PipeState.vertexShader.reflection = NULL;
+  m_PipeState.vertexShader.reflection = GetShaderReflection(rs.vertexShader);
 
   // VS constants
   m_PipeState.vertexShader.constants.floatConstants.resize(D3D9_MAX_VS_CONSTANTS_F * 4);
@@ -500,7 +1320,7 @@ void D3D9Replay::SavePipelineState(uint32_t eventId)
 
   // Pixel shader
   m_PipeState.pixelShader.resourceId = rs.pixelShader;
-  m_PipeState.pixelShader.reflection = NULL;
+  m_PipeState.pixelShader.reflection = GetShaderReflection(rs.pixelShader);
 
   // PS constants
   m_PipeState.pixelShader.constants.floatConstants.resize(D3D9_MAX_PS_CONSTANTS_F * 4);
@@ -684,24 +1504,109 @@ void D3D9Replay::SavePipelineState(uint32_t eventId)
 }
 
 ////////////////////////////////////////////////////////////////
-// Descriptors (not applicable to D3D9)
+// Descriptors
+// D3D9 doesn't have a descriptor system but we synthesize descriptor accesses
+// so that GetReadOnlyResources() works for texture bindings.
 ////////////////////////////////////////////////////////////////
+
+// D3D9 uses a fixed descriptor size of 1 byte per slot for addressing purposes.
+static const uint32_t D3D9_DESCRIPTOR_SIZE = 1;
 
 rdcarray<Descriptor> D3D9Replay::GetDescriptors(ResourceId descriptorStore,
                                                 const rdcarray<DescriptorRange> &ranges)
 {
-  return {};
+  const D3D9RenderState &rs = m_pDevice->GetRenderState();
+  rdcarray<Descriptor> ret;
+
+  for(const DescriptorRange &range : ranges)
+  {
+    for(uint32_t i = 0; i < range.count; i++)
+    {
+      uint32_t slot = range.offset + i * range.descriptorSize;
+      Descriptor desc;
+      desc.type = DescriptorType::ImageSampler;
+
+      if(slot < D3D9_TOTAL_SAMPLERS)
+      {
+        desc.resource = rs.textures[slot];
+      }
+
+      ret.push_back(desc);
+    }
+  }
+
+  return ret;
 }
 
 rdcarray<SamplerDescriptor> D3D9Replay::GetSamplerDescriptors(
     ResourceId descriptorStore, const rdcarray<DescriptorRange> &ranges)
 {
-  return {};
+  rdcarray<SamplerDescriptor> ret;
+
+  for(const DescriptorRange &range : ranges)
+  {
+    for(uint32_t i = 0; i < range.count; i++)
+    {
+      SamplerDescriptor samp;
+      ret.push_back(samp);
+    }
+  }
+
+  return ret;
 }
 
 rdcarray<DescriptorAccess> D3D9Replay::GetDescriptorAccess(uint32_t eventId)
 {
-  return {};
+  const D3D9RenderState &rs = m_pDevice->GetRenderState();
+  rdcarray<DescriptorAccess> ret;
+
+  // Use the device ResourceId as the virtual descriptor store
+  ResourceId descStore = m_pDevice->GetResourceID();
+
+  // For each shader stage (VS and PS), look at the reflection's readOnlyResources
+  // to find which sampler registers are used, and create descriptor accesses for them.
+  struct StageInfo
+  {
+    ShaderStage stage;
+    ResourceId shaderId;
+  };
+
+  StageInfo stages[] = {
+      {ShaderStage::Vertex, rs.vertexShader},
+      {ShaderStage::Pixel, rs.pixelShader},
+  };
+
+  for(const StageInfo &si : stages)
+  {
+    ShaderReflection *refl = GetShaderReflection(si.shaderId);
+    if(!refl)
+      continue;
+
+    for(int i = 0; i < refl->readOnlyResources.count(); i++)
+    {
+      const ShaderResource &res = refl->readOnlyResources[i];
+
+      uint32_t samplerSlot = res.fixedBindNumber;
+
+      // For vertex shader samplers, D3D9 uses slots D3DVERTEXTEXTURESAMPLER0..3 = 257..260
+      // which map to our internal sampler indices 16..19
+      if(si.stage == ShaderStage::Vertex && samplerSlot < 4)
+        samplerSlot += D3D9_MAX_SAMPLERS;    // offset to VS sampler range
+
+      DescriptorAccess acc;
+      acc.stage = si.stage;
+      acc.type = DescriptorType::ImageSampler;
+      acc.index = (uint16_t)i;
+      acc.arrayElement = 0;
+      acc.descriptorStore = descStore;
+      acc.byteOffset = samplerSlot;    // slot index as byte offset
+      acc.byteSize = D3D9_DESCRIPTOR_SIZE;
+      acc.staticallyUnused = false;
+      ret.push_back(acc);
+    }
+  }
+
+  return ret;
 }
 
 rdcarray<DescriptorLogicalLocation> D3D9Replay::GetDescriptorLocations(
@@ -1493,7 +2398,123 @@ void D3D9Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &second
 
 bool D3D9Replay::RenderTexture(TextureDisplay cfg)
 {
-  return false;
+  if(cfg.resourceId == ResourceId())
+    return false;
+
+  D3D9ResourceManager *rm = m_pDevice->GetResourceManager();
+  IUnknown *res = rm->GetResource(cfg.resourceId, true);
+  if(!res)
+    return false;
+
+  // Unwrap the resource to get the real D3D9 object for rendering
+  IUnknown *realRes = UnwrapD3D9Resource(res);
+  if(!realRes)
+    return false;
+
+  // Try to get a base texture from the real resource
+  IDirect3DBaseTexture9 *realTex = NULL;
+  IDirect3DTexture9 *tex2d = NULL;
+  IDirect3DCubeTexture9 *texCube = NULL;
+
+  float texW = 1.0f, texH = 1.0f;
+
+  if(SUCCEEDED(realRes->QueryInterface(__uuidof(IDirect3DTexture9), (void **)&tex2d)) && tex2d)
+  {
+    D3DSURFACE_DESC desc;
+    tex2d->GetLevelDesc(cfg.subresource.mip, &desc);
+    texW = (float)desc.Width;
+    texH = (float)desc.Height;
+    realTex = tex2d;
+  }
+  else if(SUCCEEDED(realRes->QueryInterface(__uuidof(IDirect3DCubeTexture9), (void **)&texCube)) &&
+          texCube)
+  {
+    D3DSURFACE_DESC desc;
+    texCube->GetLevelDesc(cfg.subresource.mip, &desc);
+    texW = (float)desc.Width;
+    texH = (float)desc.Height;
+    realTex = texCube;
+  }
+
+  if(!realTex)
+    return false;
+
+  IDirect3DDevice9 *dev = m_pDevice->GetReal();
+
+  // Save the current state so we can restore it later
+  IDirect3DStateBlock9 *savedState = NULL;
+  dev->CreateStateBlock(D3DSBT_ALL, &savedState);
+
+  // Set up a simple fullscreen quad using transformed vertices (pretransformed, no vertex shader)
+  struct Vertex
+  {
+    float x, y, z, w;
+    float u, v;
+  };
+
+  float left = cfg.xOffset;
+  float top = cfg.yOffset;
+  float right = left + texW * cfg.scale;
+  float bottom = top + texH * cfg.scale;
+
+  // Pre-transformed vertices (RHW = 1.0, already in screen space)
+  Vertex quad[4] = {
+      {left - 0.5f, top - 0.5f, 0.0f, 1.0f, 0.0f, 0.0f},
+      {right - 0.5f, top - 0.5f, 0.0f, 1.0f, 1.0f, 0.0f},
+      {left - 0.5f, bottom - 0.5f, 0.0f, 1.0f, 0.0f, 1.0f},
+      {right - 0.5f, bottom - 0.5f, 0.0f, 1.0f, 1.0f, 1.0f},
+  };
+
+  // Set up render state for a simple textured quad
+  dev->SetTexture(0, realTex);
+  dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
+  dev->SetVertexShader(NULL);
+  dev->SetPixelShader(NULL);
+
+  // Disable lighting, alpha blending, depth test, etc.
+  dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+  dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+  dev->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+  dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+  dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+  dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+  dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
+  dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+  dev->SetRenderState(D3DRS_CLIPPING, FALSE);
+  dev->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+  dev->SetRenderState(D3DRS_COLORWRITEENABLE,
+                      D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+                          D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
+
+  // Simple texture sampling
+  dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+  dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+  dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+  dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+  dev->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+  dev->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+
+  dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+  dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+  dev->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+  dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+  dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+
+  // Draw the quad
+  dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(Vertex));
+
+  // Clean up
+  dev->SetTexture(0, NULL);
+  SAFE_RELEASE(realTex);
+
+  // Restore state
+  if(savedState)
+  {
+    savedState->Apply();
+    savedState->Release();
+  }
+
+  return true;
 }
 
 void D3D9Replay::SetCustomShaderIncludes(const rdcarray<rdcstr> &directories)
@@ -1529,6 +2550,14 @@ void D3D9Replay::FreeCustomShader(ResourceId id)
 
 void D3D9Replay::RenderCheckerboard(FloatVector dark, FloatVector light)
 {
+  IDirect3DDevice9 *dev = m_pDevice->GetReal();
+
+  // Just clear to the dark color as a simple background.
+  // A proper checkerboard would require creating a small checkerboard texture.
+  D3DCOLOR col =
+      D3DCOLOR_COLORVALUE(dark.x * 0.5f + light.x * 0.5f, dark.y * 0.5f + light.y * 0.5f,
+                          dark.z * 0.5f + light.z * 0.5f, 1.0f);
+  dev->Clear(0, NULL, D3DCLEAR_TARGET, col, 1.0f, 0);
 }
 
 void D3D9Replay::RenderHighlightBox(float w, float h, float scale)

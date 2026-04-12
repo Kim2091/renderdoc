@@ -233,6 +233,12 @@ void PipelineStateViewer::OnCaptureLoaded()
     setToGL();
   else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::Vulkan)
     setToVulkan();
+  else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::D3D9)
+  {
+    // D3D9 doesn't have a dedicated pipeline state viewer yet.
+    // Skip output creation to avoid crashes since rendering helpers aren't implemented.
+    return;
+  }
 
   if(m_Current)
     m_Current->OnCaptureLoaded();
@@ -283,6 +289,8 @@ void PipelineStateViewer::OnEventChanged(uint32_t eventId)
     setToGL();
   else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::Vulkan)
     setToVulkan();
+  else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::D3D9)
+    return;    // D3D9 pipeline state viewer not yet implemented
 
   if(m_Current)
     m_Current->OnEventChanged(eventId);

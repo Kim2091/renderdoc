@@ -483,6 +483,18 @@ function must be called from another thread.
 )");
   virtual void SetFrameEvent(uint32_t eventId, bool force) = 0;
 
+  DOCUMENT(R"(Retrieve the current :class:`D3D9State` pipeline state.
+
+The return value will be ``None`` if the capture is not using the D3D9 API.
+You should use :meth:`GetAPIProperties` to determine the API of the capture.
+
+See also :meth:`GetPipelineState`.
+
+:return: The current D3D9 pipeline state.
+:rtype: D3D9State
+)");
+  virtual const D3D9Pipe::State *GetD3D9PipelineState() = 0;
+
   DOCUMENT(R"(Retrieve the current :class:`D3D11State` pipeline state.
 
 The return value will be ``None`` if the capture is not using the D3D11 API.

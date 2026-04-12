@@ -455,9 +455,10 @@ public:
 
   bool Tick(int type);
 
-  void SetPipelineStates(D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12, GLPipe::State *gl,
-                         VKPipe::State *vk)
+  void SetPipelineStates(D3D9Pipe::State *d3d9, D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12,
+                         GLPipe::State *gl, VKPipe::State *vk)
   {
+    m_D3D9PipelineState = d3d9;
     m_D3D11PipelineState = d3d11;
     m_D3D12PipelineState = d3d12;
     m_GLPipelineState = gl;
@@ -735,6 +736,7 @@ private:
 
   SDFile *m_StructuredFile;
 
+  D3D9Pipe::State *m_D3D9PipelineState = NULL;
   D3D11Pipe::State *m_D3D11PipelineState = NULL;
   D3D12Pipe::State *m_D3D12PipelineState = NULL;
   GLPipe::State *m_GLPipelineState = NULL;

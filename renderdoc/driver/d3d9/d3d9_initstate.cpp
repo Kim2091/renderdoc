@@ -915,6 +915,7 @@ bool WrappedIDirect3DDevice9::Serialise_InitialState(SerialiserType &ser, Resour
     }
   }
 
+  SERIALISE_ELEMENT(id).TypedAs("IDirect3DResource9 *"_lit).Important();
   SERIALISE_ELEMENT(type);
   SERIALISE_ELEMENT(dataLen);
 
@@ -931,19 +932,30 @@ bool WrappedIDirect3DDevice9::Serialise_InitialState(SerialiserType &ser, Resour
       byte *buf = new byte[(size_t)dataLen];
       ser.Serialise("data"_lit, buf, dataLen, SerialiserFlags::NoFlags);
 
-      D3D9InitialContents contents(type, NULL);
-      contents.shadowData = buf;
-      contents.shadowDataLen = dataLen;
+      if(id != ResourceId())
+      {
+        D3D9InitialContents contents(type, NULL);
+        contents.shadowData = buf;
+        contents.shadowDataLen = dataLen;
 
-      GetResourceManager()->SetInitialContents(id, std::move(contents));
+        GetResourceManager()->SetInitialContents(id, std::move(contents));
+      }
+      else
+      {
+        RDCERR("Serialise_InitialState: empty ResourceId during read, skipping initial contents");
+        delete[] buf;
+      }
     }
   }
   else
   {
     if(ser.IsReading())
     {
-      D3D9InitialContents contents(type, NULL);
-      GetResourceManager()->SetInitialContents(id, std::move(contents));
+      if(id != ResourceId())
+      {
+        D3D9InitialContents contents(type, NULL);
+        GetResourceManager()->SetInitialContents(id, std::move(contents));
+      }
     }
   }
 

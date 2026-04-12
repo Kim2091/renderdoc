@@ -319,7 +319,16 @@ const ShaderReflection *PipeState::GetShaderReflection(ShaderStage stage) const
 {
   if(IsCaptureLoaded())
   {
-    if(IsCaptureD3D11())
+    if(IsCaptureD3D9())
+    {
+      switch(stage)
+      {
+        case ShaderStage::Vertex: return m_D3D9->vertexShader.reflection;
+        case ShaderStage::Pixel: return m_D3D9->pixelShader.reflection;
+        default: break;
+      }
+    }
+    else if(IsCaptureD3D11())
     {
       switch(stage)
       {
@@ -443,7 +452,16 @@ ResourceId PipeState::GetShader(ShaderStage stage) const
 {
   if(IsCaptureLoaded())
   {
-    if(IsCaptureD3D11())
+    if(IsCaptureD3D9())
+    {
+      switch(stage)
+      {
+        case ShaderStage::Vertex: return m_D3D9->vertexShader.resourceId;
+        case ShaderStage::Pixel: return m_D3D9->pixelShader.resourceId;
+        default: break;
+      }
+    }
+    else if(IsCaptureD3D11())
     {
       switch(stage)
       {
@@ -510,7 +528,14 @@ BoundVBuffer PipeState::GetIBuffer() const
 
   if(IsCaptureLoaded())
   {
-    if(IsCaptureD3D11())
+    if(IsCaptureD3D9())
+    {
+      ret.resourceId = m_D3D9->inputAssembly.indexBuffer.resourceId;
+      ret.byteOffset = 0;
+      ret.byteStride = m_D3D9->inputAssembly.indexBuffer.byteStride;
+      ret.byteSize = ~0ULL;
+    }
+    else if(IsCaptureD3D11())
     {
       ret.resourceId = m_D3D11->inputAssembly.indexBuffer.resourceId;
       ret.byteOffset = m_D3D11->inputAssembly.indexBuffer.byteOffset;
@@ -600,7 +625,18 @@ rdcarray<BoundVBuffer> PipeState::GetVBuffers() const
 
   if(IsCaptureLoaded())
   {
-    if(IsCaptureD3D11())
+    if(IsCaptureD3D9())
+    {
+      ret.resize(m_D3D9->inputAssembly.vertexBuffers.count());
+      for(int i = 0; i < m_D3D9->inputAssembly.vertexBuffers.count(); i++)
+      {
+        ret[i].resourceId = m_D3D9->inputAssembly.vertexBuffers[i].resourceId;
+        ret[i].byteOffset = m_D3D9->inputAssembly.vertexBuffers[i].byteOffset;
+        ret[i].byteStride = m_D3D9->inputAssembly.vertexBuffers[i].byteStride;
+        ret[i].byteSize = ~0ULL;
+      }
+    }
+    else if(IsCaptureD3D11())
     {
       ret.resize(m_D3D11->inputAssembly.vertexBuffers.count());
       for(int i = 0; i < m_D3D11->inputAssembly.vertexBuffers.count(); i++)
@@ -689,7 +725,190 @@ rdcarray<VertexInputAttribute> PipeState::GetVertexInputs() const
 
   if(IsCaptureLoaded())
   {
-    if(IsCaptureD3D11())
+    if(IsCaptureD3D9())
+    {
+      // Helper lambda: convert D3DDECLUSAGE enum value to a semantic name string
+      auto D3D9UsageName = [](uint32_t usage) -> const char * {
+        // Values from D3DDECLUSAGE in d3d9types.h
+        switch(usage)
+        {
+          case 0: return "POSITION";
+          case 1: return "BLENDWEIGHT";
+          case 2: return "BLENDINDICES";
+          case 3: return "NORMAL";
+          case 4: return "PSIZE";
+          case 5: return "TEXCOORD";
+          case 6: return "TANGENT";
+          case 7: return "BINORMAL";
+          case 8: return "TESSFACTOR";
+          case 9: return "POSITIONT";
+          case 10: return "COLOR";
+          case 11: return "FOG";
+          case 12: return "DEPTH";
+          case 13: return "SAMPLE";
+          default: return "UNKNOWN";
+        }
+      };
+
+      // Helper lambda: convert D3DDECLTYPE enum value to a ResourceFormat
+      auto D3D9DeclTypeToFormat = [](uint32_t type) -> ResourceFormat {
+        ResourceFormat fmt;
+        fmt.type = ResourceFormatType::Regular;
+
+        // Values from D3DDECLTYPE in d3d9types.h
+        switch(type)
+        {
+          case 0:    // D3DDECLTYPE_FLOAT1
+            fmt.compType = CompType::Float;
+            fmt.compCount = 1;
+            fmt.compByteWidth = 4;
+            break;
+          case 1:    // D3DDECLTYPE_FLOAT2
+            fmt.compType = CompType::Float;
+            fmt.compCount = 2;
+            fmt.compByteWidth = 4;
+            break;
+          case 2:    // D3DDECLTYPE_FLOAT3
+            fmt.compType = CompType::Float;
+            fmt.compCount = 3;
+            fmt.compByteWidth = 4;
+            break;
+          case 3:    // D3DDECLTYPE_FLOAT4
+            fmt.compType = CompType::Float;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 4;
+            break;
+          case 4:    // D3DDECLTYPE_D3DCOLOR (4 packed unsigned bytes, BGRA order, normalized)
+            fmt.compType = CompType::UNorm;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 1;
+            fmt.SetBGRAOrder(true);
+            break;
+          case 5:    // D3DDECLTYPE_UBYTE4
+            fmt.compType = CompType::UInt;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 1;
+            break;
+          case 6:    // D3DDECLTYPE_SHORT2
+            fmt.compType = CompType::SInt;
+            fmt.compCount = 2;
+            fmt.compByteWidth = 2;
+            break;
+          case 7:    // D3DDECLTYPE_SHORT4
+            fmt.compType = CompType::SInt;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 2;
+            break;
+          case 8:    // D3DDECLTYPE_UBYTE4N
+            fmt.compType = CompType::UNorm;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 1;
+            break;
+          case 9:    // D3DDECLTYPE_SHORT2N
+            fmt.compType = CompType::SNorm;
+            fmt.compCount = 2;
+            fmt.compByteWidth = 2;
+            break;
+          case 10:    // D3DDECLTYPE_SHORT4N
+            fmt.compType = CompType::SNorm;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 2;
+            break;
+          case 11:    // D3DDECLTYPE_USHORT2N
+            fmt.compType = CompType::UNorm;
+            fmt.compCount = 2;
+            fmt.compByteWidth = 2;
+            break;
+          case 12:    // D3DDECLTYPE_USHORT4N
+            fmt.compType = CompType::UNorm;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 2;
+            break;
+          case 13:    // D3DDECLTYPE_UDEC3 (3x 10-bit unsigned packed into 32 bits)
+            fmt.type = ResourceFormatType::R10G10B10A2;
+            fmt.compType = CompType::UInt;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 0;
+            break;
+          case 14:    // D3DDECLTYPE_DEC3N (3x 10-bit signed normalized packed into 32 bits)
+            fmt.type = ResourceFormatType::R10G10B10A2;
+            fmt.compType = CompType::SNorm;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 0;
+            break;
+          case 15:    // D3DDECLTYPE_FLOAT16_2
+            fmt.compType = CompType::Float;
+            fmt.compCount = 2;
+            fmt.compByteWidth = 2;
+            break;
+          case 16:    // D3DDECLTYPE_FLOAT16_4
+            fmt.compType = CompType::Float;
+            fmt.compCount = 4;
+            fmt.compByteWidth = 2;
+            break;
+          default:    // D3DDECLTYPE_UNUSED or unknown
+            fmt.compType = CompType::Typeless;
+            fmt.compCount = 0;
+            fmt.compByteWidth = 0;
+            break;
+        }
+
+        return fmt;
+      };
+
+      const rdcarray<D3D9Pipe::VertexElement> &elems = m_D3D9->inputAssembly.vertexElements;
+
+      rdcarray<VertexInputAttribute> ret;
+      ret.resize(elems.size());
+      for(int i = 0; i < elems.count(); i++)
+      {
+        // Build semantic name from usage and usageIndex
+        rdcstr semName = D3D9UsageName(elems[i].usage);
+
+        bool needsUsageIdx = false;
+        for(int j = 0; j < elems.count(); j++)
+        {
+          if(i != j && elems[i].usage == elems[j].usage)
+          {
+            needsUsageIdx = true;
+            break;
+          }
+        }
+
+        // TEXCOORD always shows index since TEXCOORD0..7 is very common in D3D9
+        if(elems[i].usage == 5)    // D3DDECLUSAGE_TEXCOORD
+          needsUsageIdx = true;
+
+        ret[i].name = semName + (needsUsageIdx ? ToStr(elems[i].usageIndex) : "");
+        ret[i].vertexBuffer = (int)elems[i].stream;
+        ret[i].byteOffset = elems[i].offset;
+        ret[i].perInstance = false;
+        ret[i].instanceRate = 0;
+        ret[i].format = D3D9DeclTypeToFormat(elems[i].type);
+        memset(&ret[i].genericValue, 0, sizeof(PixelValue));
+        ret[i].used = true;
+        ret[i].genericEnabled = false;
+
+        // If we have vertex shader reflection, check if this attribute is actually used
+        if(m_D3D9->vertexShader.reflection != NULL)
+        {
+          ret[i].used = false;
+          const rdcarray<SigParameter> &sig = m_D3D9->vertexShader.reflection->inputSignature;
+          for(int ia = 0; ia < sig.count(); ia++)
+          {
+            if(striequal(semName, sig[ia].semanticName) &&
+               sig[ia].semanticIndex == elems[i].usageIndex)
+            {
+              ret[i].used = true;
+              break;
+            }
+          }
+        }
+      }
+
+      return ret;
+    }
+    else if(IsCaptureD3D11())
     {
       uint32_t byteOffs[128] = {};
 
@@ -1101,7 +1320,16 @@ Descriptor PipeState::GetDepthTarget() const
 
   if(IsCaptureLoaded())
   {
-    if(IsCaptureD3D11())
+    if(IsCaptureD3D9())
+    {
+      if(m_D3D9->outputMerger.depthStencil != ResourceId())
+      {
+        ret.resource = m_D3D9->outputMerger.depthStencil;
+        ret.type = DescriptorType::ReadWriteImage;
+      }
+      return ret;
+    }
+    else if(IsCaptureD3D11())
     {
       return m_D3D11->outputMerger.depthTarget;
     }
@@ -1157,7 +1385,20 @@ rdcarray<Descriptor> PipeState::GetOutputTargets() const
 
   if(IsCaptureLoaded())
   {
-    if(IsCaptureD3D11())
+    if(IsCaptureD3D9())
+    {
+      ret.resize(m_D3D9->outputMerger.renderTargets.count());
+      for(int i = 0; i < m_D3D9->outputMerger.renderTargets.count(); i++)
+      {
+        if(m_D3D9->outputMerger.renderTargets[i] != ResourceId())
+        {
+          ret[i].resource = m_D3D9->outputMerger.renderTargets[i];
+          ret[i].type = DescriptorType::ReadWriteImage;
+        }
+      }
+      return ret;
+    }
+    else if(IsCaptureD3D11())
     {
       return m_D3D11->outputMerger.renderTargets;
     }

@@ -218,8 +218,8 @@ public:
 
   FrameRecord &WriteFrameRecord() { return m_FrameRecord; }
   FrameRecord GetFrameRecord() { return m_FrameRecord; }
-  void SetPipelineStates(D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12, GLPipe::State *gl,
-                         VKPipe::State *vk)
+  void SetPipelineStates(D3D9Pipe::State *d3d9, D3D11Pipe::State *d3d11, D3D12Pipe::State *d3d12,
+                         GLPipe::State *gl, VKPipe::State *vk)
   {
     m_GLPipelineState = gl;
   }
