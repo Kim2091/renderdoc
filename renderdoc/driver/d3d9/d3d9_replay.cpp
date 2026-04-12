@@ -1214,15 +1214,7 @@ void D3D9Replay::FreeDebugger(ShaderDebugger *debugger)
   delete debugger;
 }
 
-////////////////////////////////////////////////////////////////
-// Overlay
-////////////////////////////////////////////////////////////////
-
-ResourceId D3D9Replay::RenderOverlay(ResourceId texid, FloatVector clearCol, DebugOverlay overlay,
-                                     uint32_t eventId, const rdcarray<uint32_t> &passEvents)
-{
-  return ResourceId();
-}
+// RenderOverlay is implemented in d3d9_overlay.cpp
 
 bool D3D9Replay::IsRenderOutput(ResourceId id)
 {

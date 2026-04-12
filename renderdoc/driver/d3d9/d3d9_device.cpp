@@ -463,24 +463,7 @@ bool WrappedIDirect3DDevice9::Serialise_CaptureScope(SerialiserType &ser)
 template bool WrappedIDirect3DDevice9::Serialise_CaptureScope(ReadSerialiser &ser);
 template bool WrappedIDirect3DDevice9::Serialise_CaptureScope(WriteSerialiser &ser);
 
-///////////////////////////////////////////////////////////////////////////
-// Initial state helpers
-///////////////////////////////////////////////////////////////////////////
-bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
-{
-  // TODO: implement initial state preparation per resource type
-  return true;
-}
-
-void WrappedIDirect3DDevice9::Create_InitialState(ResourceId id, IUnknown *live, bool hasData)
-{
-  // TODO: implement initial state creation during replay
-}
-
-void WrappedIDirect3DDevice9::Apply_InitialState(IUnknown *live, D3D9InitialContents &data)
-{
-  // TODO: implement initial state application during replay
-}
+// Initial state helpers are implemented in d3d9_initstate.cpp
 
 ///////////////////////////////////////////////////////////////////////////
 // D3DPERF statics

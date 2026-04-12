@@ -180,6 +180,10 @@ public:
   void Create_InitialState(ResourceId id, IUnknown *live, bool hasData);
   void Apply_InitialState(IUnknown *live, D3D9InitialContents &data);
 
+  template <typename SerialiserType>
+  bool Serialise_InitialState(SerialiserType &ser, ResourceId id, D3D9ResourceRecord *record,
+                              const D3D9InitialContents *initial);
+
   ////////////////////////////////////////////////////////////////
   // State block helpers
 

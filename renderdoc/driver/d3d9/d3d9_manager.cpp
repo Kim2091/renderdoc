@@ -25,6 +25,18 @@
 #include "d3d9_manager.h"
 #include "d3d9_device.h"
 
+template <typename SerialiserType>
+bool D3D9ResourceManager::Serialise_InitialState(SerialiserType &ser, ResourceId id,
+                                                 D3D9ResourceRecord *record,
+                                                 const D3D9InitialContents *initial)
+{
+  return m_Device->Serialise_InitialState(ser, id, record, initial);
+}
+
+template bool D3D9ResourceManager::Serialise_InitialState(ReadSerialiser &ser, ResourceId id,
+                                                          D3D9ResourceRecord *record,
+                                                          const D3D9InitialContents *initial);
+
 void D3D9ResourceManager::SetInternalResource(IUnknown *res)
 {
   if(res && !RenderDoc::Inst().IsReplayApp())
