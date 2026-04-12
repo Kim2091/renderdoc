@@ -25,6 +25,7 @@
 #include "d3d9_device.h"
 #include "core/core.h"
 #include "d3d9_buffers.h"
+#include "d3d9_query.h"
 #include "d3d9_resources.h"
 #include "d3d9_shaders.h"
 #include "d3d9_stateblock.h"
@@ -983,42 +984,217 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::UpdateSurface(
     IDirect3DSurface9 *pSourceSurface, CONST RECT *pSourceRect,
     IDirect3DSurface9 *pDestinationSurface, CONST POINT *pDestPoint)
 {
-  // TODO: unwrap surfaces, serialise
-  return m_pDevice->UpdateSurface(pSourceSurface, pSourceRect, pDestinationSurface, pDestPoint);
+  IDirect3DSurface9 *realSrc = pSourceSurface;
+  IDirect3DSurface9 *realDst = pDestinationSurface;
+  if(pSourceSurface)
+  {
+    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pSourceSurface);
+    if(w)
+      realSrc = w->GetReal();
+  }
+  if(pDestinationSurface)
+  {
+    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pDestinationSurface);
+    if(w)
+      realDst = w->GetReal();
+  }
+
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->UpdateSurface(realSrc, pSourceRect, realDst, pDestPoint));
+
+  if(SUCCEEDED(ret) && IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::UpdateSurface);
+    Serialise_UpdateSurface(ser, pSourceSurface, pSourceRect, pDestinationSurface, pDestPoint);
+    m_DeviceRecord->AddChunk(scope.Get());
+
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pSourceSurface),
+                                                      eFrameRef_Read);
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pDestinationSurface),
+                                                      eFrameRef_PartialWrite);
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::UpdateTexture(
     IDirect3DBaseTexture9 *pSourceTexture, IDirect3DBaseTexture9 *pDestinationTexture)
 {
-  // TODO: unwrap textures, serialise
-  return m_pDevice->UpdateTexture(pSourceTexture, pDestinationTexture);
+  IDirect3DBaseTexture9 *realSrc = pSourceTexture;
+  IDirect3DBaseTexture9 *realDst = pDestinationTexture;
+  if(pSourceTexture)
+  {
+    if(WrappedIDirect3DTexture9 *tex = dynamic_cast<WrappedIDirect3DTexture9 *>(pSourceTexture))
+      realSrc = tex->GetReal();
+    else if(WrappedIDirect3DCubeTexture9 *cube =
+                dynamic_cast<WrappedIDirect3DCubeTexture9 *>(pSourceTexture))
+      realSrc = cube->GetReal();
+    else if(WrappedIDirect3DVolumeTexture9 *vol =
+                dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(pSourceTexture))
+      realSrc = vol->GetReal();
+  }
+  if(pDestinationTexture)
+  {
+    if(WrappedIDirect3DTexture9 *tex = dynamic_cast<WrappedIDirect3DTexture9 *>(pDestinationTexture))
+      realDst = tex->GetReal();
+    else if(WrappedIDirect3DCubeTexture9 *cube =
+                dynamic_cast<WrappedIDirect3DCubeTexture9 *>(pDestinationTexture))
+      realDst = cube->GetReal();
+    else if(WrappedIDirect3DVolumeTexture9 *vol =
+                dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(pDestinationTexture))
+      realDst = vol->GetReal();
+  }
+
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->UpdateTexture(realSrc, realDst));
+
+  if(SUCCEEDED(ret) && IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::UpdateTexture);
+    Serialise_UpdateTexture(ser, pSourceTexture, pDestinationTexture);
+    m_DeviceRecord->AddChunk(scope.Get());
+
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pSourceTexture),
+                                                      eFrameRef_Read);
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pDestinationTexture),
+                                                      eFrameRef_PartialWrite);
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetRenderTargetData(
     IDirect3DSurface9 *pRenderTarget, IDirect3DSurface9 *pDestSurface)
 {
-  return m_pDevice->GetRenderTargetData(pRenderTarget, pDestSurface);
+  IDirect3DSurface9 *realRT = pRenderTarget;
+  IDirect3DSurface9 *realDst = pDestSurface;
+  if(pRenderTarget)
+  {
+    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pRenderTarget);
+    if(w)
+      realRT = w->GetReal();
+  }
+  if(pDestSurface)
+  {
+    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pDestSurface);
+    if(w)
+      realDst = w->GetReal();
+  }
+
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->GetRenderTargetData(realRT, realDst));
+
+  if(SUCCEEDED(ret) && IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::GetRenderTargetData);
+    Serialise_GetRenderTargetData(ser, pRenderTarget, pDestSurface);
+    m_DeviceRecord->AddChunk(scope.Get());
+
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pRenderTarget),
+                                                      eFrameRef_Read);
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pDestSurface),
+                                                      eFrameRef_PartialWrite);
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetFrontBufferData(
     UINT iSwapChain, IDirect3DSurface9 *pDestSurface)
 {
-  return m_pDevice->GetFrontBufferData(iSwapChain, pDestSurface);
+  IDirect3DSurface9 *realDst = pDestSurface;
+  if(pDestSurface)
+  {
+    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pDestSurface);
+    if(w)
+      realDst = w->GetReal();
+  }
+
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->GetFrontBufferData(iSwapChain, realDst));
+
+  if(SUCCEEDED(ret) && IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::GetFrontBufferData);
+    Serialise_GetFrontBufferData(ser, iSwapChain, pDestSurface);
+    m_DeviceRecord->AddChunk(scope.Get());
+
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pDestSurface),
+                                                      eFrameRef_PartialWrite);
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::StretchRect(
     IDirect3DSurface9 *pSourceSurface, CONST RECT *pSourceRect, IDirect3DSurface9 *pDestSurface,
     CONST RECT *pDestRect, D3DTEXTUREFILTERTYPE Filter)
 {
-  // TODO: unwrap surfaces, serialise
-  return m_pDevice->StretchRect(pSourceSurface, pSourceRect, pDestSurface, pDestRect, Filter);
+  IDirect3DSurface9 *realSrc = pSourceSurface;
+  IDirect3DSurface9 *realDst = pDestSurface;
+  if(pSourceSurface)
+  {
+    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pSourceSurface);
+    if(w)
+      realSrc = w->GetReal();
+  }
+  if(pDestSurface)
+  {
+    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pDestSurface);
+    if(w)
+      realDst = w->GetReal();
+  }
+
+  HRESULT ret;
+  SERIALISE_TIME_CALL(
+      ret = m_pDevice->StretchRect(realSrc, pSourceRect, realDst, pDestRect, Filter));
+
+  if(SUCCEEDED(ret) && IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::StretchRect);
+    Serialise_StretchRect(ser, pSourceSurface, pSourceRect, pDestSurface, pDestRect, Filter);
+    m_DeviceRecord->AddChunk(scope.Get());
+
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pSourceSurface),
+                                                      eFrameRef_Read);
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pDestSurface),
+                                                      eFrameRef_PartialWrite);
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::ColorFill(IDirect3DSurface9 *pSurface,
                                                               CONST RECT *pRect, D3DCOLOR color)
 {
-  // TODO: unwrap surface, serialise
-  return m_pDevice->ColorFill(pSurface, pRect, color);
+  IDirect3DSurface9 *realSurf = pSurface;
+  if(pSurface)
+  {
+    WrappedIDirect3DSurface9 *w = dynamic_cast<WrappedIDirect3DSurface9 *>(pSurface);
+    if(w)
+      realSurf = w->GetReal();
+  }
+
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->ColorFill(realSurf, pRect, color));
+
+  if(SUCCEEDED(ret) && IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::ColorFill);
+    Serialise_ColorFill(ser, pSurface, pRect, color);
+    m_DeviceRecord->AddChunk(scope.Get());
+
+    GetResourceManager()->MarkResourceFrameReferenced(GetIDForD3D9Resource(pSurface),
+                                                      eFrameRef_PartialWrite);
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateOffscreenPlainSurface(
@@ -2547,6 +2723,40 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DeletePatch(UINT Handle)
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateQuery(D3DQUERYTYPE Type,
                                                                 IDirect3DQuery9 **ppQuery)
 {
-  // TODO: wrap query
-  return m_pDevice->CreateQuery(Type, ppQuery);
+  // If ppQuery is NULL, the application is just testing if the query type is supported
+  if(ppQuery == NULL)
+    return m_pDevice->CreateQuery(Type, NULL);
+
+  IDirect3DQuery9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreateQuery(Type, &real));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DQuery9 *wrappedQuery = new WrappedIDirect3DQuery9(real, this, Type);
+    IDirect3DQuery9 *wrappedPtr = wrappedQuery;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedQuery->GetResourceID());
+      record->resType = D3D9ResourceType::Query;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateQuery);
+        Serialise_CreateQuery(ser, Type, &wrappedPtr);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppQuery = wrappedQuery;
+  }
+  else
+  {
+    *ppQuery = NULL;
+  }
+
+  return ret;
 }

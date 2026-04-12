@@ -24,6 +24,7 @@
 
 #include "d3d9_resources.h"
 #include "d3d9_buffers.h"
+#include "d3d9_query.h"
 #include "d3d9_shaders.h"
 #include "d3d9_stateblock.h"
 
@@ -63,6 +64,8 @@ ResourceId GetIDForD3D9Resource(IUnknown *resource)
     return decl->GetResourceID();
   if(WrappedIDirect3DStateBlock9 *sb = dynamic_cast<WrappedIDirect3DStateBlock9 *>(resource))
     return sb->GetResourceID();
+  if(WrappedIDirect3DQuery9 *query = dynamic_cast<WrappedIDirect3DQuery9 *>(resource))
+    return query->GetResourceID();
 
   RDCERR("GetIDForD3D9Resource called on unrecognised/unwrapped resource");
   return ResourceId();

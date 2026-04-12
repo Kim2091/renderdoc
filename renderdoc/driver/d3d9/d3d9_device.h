@@ -267,10 +267,12 @@ public:
                                 IDirect3DBaseTexture9 *pSourceTexture,
                                 IDirect3DBaseTexture9 *pDestinationTexture);
 
-  HRESULT STDMETHODCALLTYPE GetRenderTargetData(IDirect3DSurface9 *pRenderTarget,
-                                                 IDirect3DSurface9 *pDestSurface) override;
-  HRESULT STDMETHODCALLTYPE GetFrontBufferData(UINT iSwapChain,
-                                                IDirect3DSurface9 *pDestSurface) override;
+  IMPLEMENT_FUNCTION_SERIALISED(HRESULT STDMETHODCALLTYPE, GetRenderTargetData,
+                                IDirect3DSurface9 *pRenderTarget,
+                                IDirect3DSurface9 *pDestSurface);
+
+  IMPLEMENT_FUNCTION_SERIALISED(HRESULT STDMETHODCALLTYPE, GetFrontBufferData, UINT iSwapChain,
+                                IDirect3DSurface9 *pDestSurface);
 
   IMPLEMENT_FUNCTION_SERIALISED(HRESULT STDMETHODCALLTYPE, StretchRect,
                                 IDirect3DSurface9 *pSourceSurface, CONST RECT *pSourceRect,
@@ -516,4 +518,8 @@ public:
   // -- Query --
   IMPLEMENT_FUNCTION_SERIALISED(HRESULT STDMETHODCALLTYPE, CreateQuery, D3DQUERYTYPE Type,
                                 IDirect3DQuery9 **ppQuery);
+
+  // Query event serialization (called from WrappedIDirect3DQuery9)
+  template <typename SerialiserType>
+  bool Serialise_QueryIssue(SerialiserType &ser, IDirect3DQuery9 *pQuery, DWORD dwIssueFlags);
 };

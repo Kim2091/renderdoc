@@ -789,6 +789,241 @@ bool WrappedIDirect3DDevice9::Serialise_Reset(SerialiserType &ser,
 }
 
 ///////////////////////////////////////////////////////////////////////////
+// Surface operations
+///////////////////////////////////////////////////////////////////////////
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_UpdateSurface(SerialiserType &ser,
+                                                       IDirect3DSurface9 *pSourceSurface,
+                                                       const RECT *pSourceRect,
+                                                       IDirect3DSurface9 *pDestinationSurface,
+                                                       const POINT *pDestPoint)
+{
+  ResourceId srcId, dstId;
+  if(ser.IsWriting())
+  {
+    srcId = GetIDForD3D9Resource(pSourceSurface);
+    dstId = GetIDForD3D9Resource(pDestinationSurface);
+  }
+  SERIALISE_ELEMENT(srcId).Named("SourceSurface"_lit);
+  SERIALISE_ELEMENT(dstId).Named("DestSurface"_lit);
+  SERIALISE_ELEMENT_OPT(pSourceRect);
+  SERIALISE_ELEMENT_OPT(pDestPoint);
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    IDirect3DSurface9 *src = NULL;
+    IDirect3DSurface9 *dst = NULL;
+    if(srcId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(srcId);
+      WrappedIDirect3DSurface9 *wrappedSrc = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
+      if(wrappedSrc)
+        src = wrappedSrc->GetReal();
+    }
+    if(dstId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(dstId);
+      WrappedIDirect3DSurface9 *wrappedDst = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
+      if(wrappedDst)
+        dst = wrappedDst->GetReal();
+    }
+    if(src && dst)
+      m_pDevice->UpdateSurface(src, pSourceRect, dst, pDestPoint);
+  }
+
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_UpdateTexture(SerialiserType &ser,
+                                                       IDirect3DBaseTexture9 *pSourceTexture,
+                                                       IDirect3DBaseTexture9 *pDestinationTexture)
+{
+  ResourceId srcId, dstId;
+  if(ser.IsWriting())
+  {
+    srcId = GetIDForD3D9Resource(pSourceTexture);
+    dstId = GetIDForD3D9Resource(pDestinationTexture);
+  }
+  SERIALISE_ELEMENT(srcId).Named("SourceTexture"_lit);
+  SERIALISE_ELEMENT(dstId).Named("DestTexture"_lit);
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    IDirect3DBaseTexture9 *src = NULL;
+    IDirect3DBaseTexture9 *dst = NULL;
+    if(srcId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(srcId);
+      // Try each texture wrapper type
+      if(WrappedIDirect3DTexture9 *tex = dynamic_cast<WrappedIDirect3DTexture9 *>(res))
+        src = tex->GetReal();
+      else if(WrappedIDirect3DCubeTexture9 *cube = dynamic_cast<WrappedIDirect3DCubeTexture9 *>(res))
+        src = cube->GetReal();
+      else if(WrappedIDirect3DVolumeTexture9 *vol =
+                  dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(res))
+        src = vol->GetReal();
+    }
+    if(dstId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(dstId);
+      if(WrappedIDirect3DTexture9 *tex = dynamic_cast<WrappedIDirect3DTexture9 *>(res))
+        dst = tex->GetReal();
+      else if(WrappedIDirect3DCubeTexture9 *cube = dynamic_cast<WrappedIDirect3DCubeTexture9 *>(res))
+        dst = cube->GetReal();
+      else if(WrappedIDirect3DVolumeTexture9 *vol =
+                  dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(res))
+        dst = vol->GetReal();
+    }
+    if(src && dst)
+      m_pDevice->UpdateTexture(src, dst);
+  }
+
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_StretchRect(SerialiserType &ser,
+                                                     IDirect3DSurface9 *pSourceSurface,
+                                                     const RECT *pSourceRect,
+                                                     IDirect3DSurface9 *pDestSurface,
+                                                     const RECT *pDestRect,
+                                                     D3DTEXTUREFILTERTYPE Filter)
+{
+  ResourceId srcId, dstId;
+  if(ser.IsWriting())
+  {
+    srcId = GetIDForD3D9Resource(pSourceSurface);
+    dstId = GetIDForD3D9Resource(pDestSurface);
+  }
+  SERIALISE_ELEMENT(srcId).Named("SourceSurface"_lit);
+  SERIALISE_ELEMENT(dstId).Named("DestSurface"_lit);
+  SERIALISE_ELEMENT_OPT(pSourceRect);
+  SERIALISE_ELEMENT_OPT(pDestRect);
+  SERIALISE_ELEMENT(Filter);
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    IDirect3DSurface9 *src = NULL;
+    IDirect3DSurface9 *dst = NULL;
+    if(srcId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(srcId);
+      WrappedIDirect3DSurface9 *wrappedSrc = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
+      if(wrappedSrc)
+        src = wrappedSrc->GetReal();
+    }
+    if(dstId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(dstId);
+      WrappedIDirect3DSurface9 *wrappedDst = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
+      if(wrappedDst)
+        dst = wrappedDst->GetReal();
+    }
+    if(src && dst)
+      m_pDevice->StretchRect(src, pSourceRect, dst, pDestRect, Filter);
+  }
+
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_ColorFill(SerialiserType &ser,
+                                                   IDirect3DSurface9 *pSurface, const RECT *pRect,
+                                                   D3DCOLOR color)
+{
+  ResourceId surfId;
+  if(ser.IsWriting())
+    surfId = GetIDForD3D9Resource(pSurface);
+  SERIALISE_ELEMENT(surfId).Named("Surface"_lit);
+  SERIALISE_ELEMENT_OPT(pRect);
+  SERIALISE_ELEMENT(color);
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    if(surfId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(surfId);
+      WrappedIDirect3DSurface9 *wrappedSurf = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
+      if(wrappedSurf)
+        m_pDevice->ColorFill(wrappedSurf->GetReal(), pRect, color);
+    }
+  }
+
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_GetRenderTargetData(SerialiserType &ser,
+                                                             IDirect3DSurface9 *pRenderTarget,
+                                                             IDirect3DSurface9 *pDestSurface)
+{
+  ResourceId srcId, dstId;
+  if(ser.IsWriting())
+  {
+    srcId = GetIDForD3D9Resource(pRenderTarget);
+    dstId = GetIDForD3D9Resource(pDestSurface);
+  }
+  SERIALISE_ELEMENT(srcId).Named("RenderTarget"_lit);
+  SERIALISE_ELEMENT(dstId).Named("DestSurface"_lit);
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    IDirect3DSurface9 *src = NULL;
+    IDirect3DSurface9 *dst = NULL;
+    if(srcId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(srcId);
+      WrappedIDirect3DSurface9 *wrappedSrc = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
+      if(wrappedSrc)
+        src = wrappedSrc->GetReal();
+    }
+    if(dstId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(dstId);
+      WrappedIDirect3DSurface9 *wrappedDst = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
+      if(wrappedDst)
+        dst = wrappedDst->GetReal();
+    }
+    if(src && dst)
+      m_pDevice->GetRenderTargetData(src, dst);
+  }
+
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_GetFrontBufferData(SerialiserType &ser, UINT iSwapChain,
+                                                            IDirect3DSurface9 *pDestSurface)
+{
+  SERIALISE_ELEMENT(iSwapChain);
+  ResourceId dstId;
+  if(ser.IsWriting())
+    dstId = GetIDForD3D9Resource(pDestSurface);
+  SERIALISE_ELEMENT(dstId).Named("DestSurface"_lit);
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    if(dstId != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(dstId);
+      WrappedIDirect3DSurface9 *wrappedDst = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
+      if(wrappedDst)
+        m_pDevice->GetFrontBufferData(iSwapChain, wrappedDst->GetReal());
+    }
+  }
+
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////
 // Draw calls
 ///////////////////////////////////////////////////////////////////////////
 
@@ -1054,3 +1289,26 @@ INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, DrawIndexedPri
                                 UINT NumVertices, UINT PrimitiveCount, CONST void *pIndexData,
                                 D3DFORMAT IndexDataFormat, CONST void *pVertexStreamZeroData,
                                 UINT VertexStreamZeroStride);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, UpdateSurface,
+                                IDirect3DSurface9 *pSourceSurface, CONST RECT *pSourceRect,
+                                IDirect3DSurface9 *pDestinationSurface, CONST POINT *pDestPoint);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, UpdateTexture,
+                                IDirect3DBaseTexture9 *pSourceTexture,
+                                IDirect3DBaseTexture9 *pDestinationTexture);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, StretchRect,
+                                IDirect3DSurface9 *pSourceSurface, CONST RECT *pSourceRect,
+                                IDirect3DSurface9 *pDestSurface, CONST RECT *pDestRect,
+                                D3DTEXTUREFILTERTYPE Filter);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, ColorFill,
+                                IDirect3DSurface9 *pSurface, CONST RECT *pRect, D3DCOLOR color);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, GetRenderTargetData,
+                                IDirect3DSurface9 *pRenderTarget,
+                                IDirect3DSurface9 *pDestSurface);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, GetFrontBufferData,
+                                UINT iSwapChain, IDirect3DSurface9 *pDestSurface);
