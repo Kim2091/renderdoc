@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Common">
+      <UniqueIdentifier>{b2e3c7a1-4d8f-4e92-9a5b-1c6d8f3e7a42}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Util">
+      <UniqueIdentifier>{d4f5e6a7-8b9c-4d2e-a1b3-5c7d9e0f1a23}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Wrapped">
+      <UniqueIdentifier>{e5a6b7c8-9d0e-4f1a-b2c3-6d8e0f1a2b34}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Replay">
+      <UniqueIdentifier>{f6b7c8d9-0e1f-4a2b-c3d4-7e9f0a1b2c45}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Hooks">
+      <UniqueIdentifier>{a7c8d9e0-1f2a-4b3c-d4e5-8f0a1b2c3d56}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="PCH">
+      <UniqueIdentifier>{b8d9e0f1-2a3b-4c4d-e5f6-9a1b2c3d4e67}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="precompiled.cpp">
+      <Filter>PCH</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_common.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_renderstate.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_manager.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_device.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_device_wrap.cpp">
+      <Filter>Wrapped</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_d3d9.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_hooks.cpp">
+      <Filter>Hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_resources.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_buffers.cpp">
+      <Filter>Wrapped</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_shaders.cpp">
+      <Filter>Wrapped</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_stateblock.cpp">
+      <Filter>Wrapped</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_swapchain.cpp">
+      <Filter>Wrapped</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_query.cpp">
+      <Filter>Wrapped</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_serialise.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_stringise.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_replay.cpp">
+      <Filter>Replay</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_initstate.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_overlay.cpp">
+      <Filter>Replay</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d9_debug.cpp">
+      <Filter>Replay</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="precompiled.h">
+      <Filter>PCH</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_chunks.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_common.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_renderstate.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_manager.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_device.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_d3d9.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_resources.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_buffers.h">
+      <Filter>Wrapped</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_shaders.h">
+      <Filter>Wrapped</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_stateblock.h">
+      <Filter>Wrapped</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_swapchain.h">
+      <Filter>Wrapped</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_query.h">
+      <Filter>Wrapped</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_replay.h">
+      <Filter>Replay</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_debug.h">
+      <Filter>Replay</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
