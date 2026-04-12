@@ -83,6 +83,14 @@ private:
 
   PerformanceTimer m_CaptureTimer;
 
+  // Event/action tracking for replay
+  uint32_t m_CurEventID;
+  uint32_t m_CurActionID;
+  uint64_t m_CurChunkOffset;
+  rdcarray<APIEvent> m_CurEvents;
+  rdcarray<ActionDescription *> m_ActionStack;
+  ActionDescription m_ParentAction;
+
 public:
   WrappedIDirect3DDevice9(IDirect3DDevice9 *real, WrappedIDirect3D9 *d3d9,
                           D3DPRESENT_PARAMETERS *pPresentationParameters);
@@ -102,6 +110,21 @@ public:
   Threading::CriticalSection &D3DLock() { return m_D3DLock; }
 
   SDFile *GetStructuredFile() { return m_StructuredFile; }
+
+  void IncrementFrameCounter() { m_FrameCounter++; }
+  uint32_t GetFrameCounter() const { return m_FrameCounter; }
+
+  // SwapChain Present serialization (called from WrappedIDirect3DSwapChain9)
+  template <typename SerialiserType>
+  bool Serialise_SwapChainPresent(SerialiserType &ser, const RECT *pSourceRect,
+                                  const RECT *pDestRect, HWND hDestWindowOverride,
+                                  const RGNDATA *pDirtyRegion);
+
+  ////////////////////////////////////////////////////////////////
+  // Event/Action tracking for replay
+
+  void AddEvent();
+  void AddAction(const ActionDescription &a);
 
   ////////////////////////////////////////////////////////////////
   // IFrameCapturer interface

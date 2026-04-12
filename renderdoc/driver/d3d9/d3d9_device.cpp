@@ -47,6 +47,10 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real, Wrapped
   m_Replay = NULL;
   m_DeviceRecord = NULL;
 
+  m_CurEventID = 0;
+  m_CurActionID = 0;
+  m_CurChunkOffset = 0;
+
   m_SectionVersion = D3D9InitParams::CurrentVersion;
 
   m_StructuredFile = m_StoredStructuredData = new SDFile;
@@ -109,6 +113,10 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real,
   m_Replay = NULL;
   m_DeviceRecord = NULL;
 
+  m_CurEventID = 0;
+  m_CurActionID = 0;
+  m_CurChunkOffset = 0;
+
   m_SectionVersion = D3D9InitParams::CurrentVersion;
   m_InitParams = params;
 
@@ -151,6 +159,53 @@ WrappedIDirect3DDevice9::~WrappedIDirect3DDevice9()
   SAFE_DELETE(m_Replay);
 
   SAFE_RELEASE(m_pDevice);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Event/Action tracking
+///////////////////////////////////////////////////////////////////////////
+
+void WrappedIDirect3DDevice9::AddEvent()
+{
+  if(m_CurEventID == 0)
+    return;
+
+  APIEvent apievent;
+
+  apievent.fileOffset = m_CurChunkOffset;
+  apievent.eventId = m_CurEventID;
+
+  apievent.chunkIndex = uint32_t(m_StructuredFile->chunks.size() - 1);
+
+  m_CurEvents.push_back(apievent);
+
+  if(IsLoading(m_State))
+    m_CurEventID++;
+}
+
+void WrappedIDirect3DDevice9::AddAction(const ActionDescription &a)
+{
+  if(m_CurEventID == 0)
+    return;
+
+  ActionDescription action = a;
+
+  action.eventId = m_CurEventID;
+  action.actionId = m_CurActionID;
+
+  // markers don't increment action ID
+  ActionFlags MarkerMask = ActionFlags::SetMarker | ActionFlags::PushMarker | ActionFlags::PopMarker;
+  if(!(action.flags & MarkerMask))
+    m_CurActionID++;
+
+  action.events.swap(m_CurEvents);
+
+  // should have at least the root action here, push this action
+  // onto the back's children list.
+  if(!m_ActionStack.empty())
+    m_ActionStack.back()->children.push_back(action);
+  else
+    RDCERR("Somehow lost action stack!");
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -533,8 +588,24 @@ UINT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetNumberOfSwapChains()
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Reset(
     D3DPRESENT_PARAMETERS *pPresentationParameters)
 {
-  // TODO: serialise Reset, re-wrap resources
-  return m_pDevice->Reset(pPresentationParameters);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->Reset(pPresentationParameters));
+
+  if(SUCCEEDED(ret))
+  {
+    if(pPresentationParameters)
+      m_InitParams.PresentationParameters = *pPresentationParameters;
+
+    if(IsActiveCapturing(m_State))
+    {
+      USE_SCRATCH_SERIALISER();
+      SCOPED_SERIALISE_CHUNK(D3D9Chunk::Reset);
+      Serialise_Reset(ser, pPresentationParameters);
+      m_DeviceRecord->AddChunk(scope.Get());
+    }
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Present(CONST RECT *pSourceRect,
@@ -542,8 +613,30 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Present(CONST RECT *pSourceRe
                                                             HWND hDestWindowOverride,
                                                             CONST RGNDATA *pDirtyRegion)
 {
-  // TODO: serialise Present, increment frame counter, handle capture triggers
   m_FrameCounter++;
+
+  if(IsActiveCapturing(m_State))
+  {
+    // Serialize Present as the last event
+    {
+      USE_SCRATCH_SERIALISER();
+      SCOPED_SERIALISE_CHUNK(D3D9Chunk::Present);
+      Serialise_Present(ser, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+      m_DeviceRecord->AddChunk(scope.Get());
+    }
+
+    // End the frame capture
+    RenderDoc::Inst().EndFrameCapture(DeviceOwnedWindow((void *)this, NULL));
+  }
+  else
+  {
+    // Check if a capture was requested
+    if(RenderDoc::Inst().ShouldTriggerCapture(m_FrameCounter))
+    {
+      RenderDoc::Inst().StartFrameCapture(DeviceOwnedWindow((void *)this, NULL));
+    }
+  }
+
   return m_pDevice->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
 }
 
@@ -1655,26 +1748,60 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DrawPrimitive(D3DPRIMITIVETYP
                                                                   UINT StartVertex,
                                                                   UINT PrimitiveCount)
 {
-  // TODO: serialise
-  return m_pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    GET_SERIALISER.SetActionChunk();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::DrawPrimitive);
+    Serialise_DrawPrimitive(ser, PrimitiveType, StartVertex, PrimitiveCount);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DrawIndexedPrimitive(
     D3DPRIMITIVETYPE PrimitiveType, INT BaseVertexIndex, UINT MinVertexIndex, UINT NumVertices,
     UINT startIndex, UINT primCount)
 {
-  // TODO: serialise
-  return m_pDevice->DrawIndexedPrimitive(PrimitiveType, BaseVertexIndex, MinVertexIndex,
-                                         NumVertices, startIndex, primCount);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->DrawIndexedPrimitive(PrimitiveType, BaseVertexIndex,
+                                                             MinVertexIndex, NumVertices,
+                                                             startIndex, primCount));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    GET_SERIALISER.SetActionChunk();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::DrawIndexedPrimitive);
+    Serialise_DrawIndexedPrimitive(ser, PrimitiveType, BaseVertexIndex, MinVertexIndex, NumVertices,
+                                   startIndex, primCount);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DrawPrimitiveUP(
     D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, CONST void *pVertexStreamZeroData,
     UINT VertexStreamZeroStride)
 {
-  // TODO: serialise
-  return m_pDevice->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData,
-                                    VertexStreamZeroStride);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->DrawPrimitiveUP(PrimitiveType, PrimitiveCount,
+                                                        pVertexStreamZeroData,
+                                                        VertexStreamZeroStride));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    GET_SERIALISER.SetActionChunk();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::DrawPrimitiveUP);
+    Serialise_DrawPrimitiveUP(ser, PrimitiveType, PrimitiveCount, pVertexStreamZeroData,
+                              VertexStreamZeroStride);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DrawIndexedPrimitiveUP(
@@ -1682,10 +1809,22 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DrawIndexedPrimitiveUP(
     CONST void *pIndexData, D3DFORMAT IndexDataFormat, CONST void *pVertexStreamZeroData,
     UINT VertexStreamZeroStride)
 {
-  // TODO: serialise
-  return m_pDevice->DrawIndexedPrimitiveUP(PrimitiveType, MinVertexIndex, NumVertices,
-                                           PrimitiveCount, pIndexData, IndexDataFormat,
-                                           pVertexStreamZeroData, VertexStreamZeroStride);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->DrawIndexedPrimitiveUP(
+                          PrimitiveType, MinVertexIndex, NumVertices, PrimitiveCount, pIndexData,
+                          IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    GET_SERIALISER.SetActionChunk();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::DrawIndexedPrimitiveUP);
+    Serialise_DrawIndexedPrimitiveUP(ser, PrimitiveType, MinVertexIndex, NumVertices,
+                                     PrimitiveCount, pIndexData, IndexDataFormat,
+                                     pVertexStreamZeroData, VertexStreamZeroStride);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////

@@ -25,6 +25,7 @@
 #include "d3d9_device.h"
 #include "d3d9_buffers.h"
 #include "d3d9_resources.h"
+#include "d3d9_shaders.h"
 
 ///////////////////////////////////////////////////////////////////////////
 // Render state
@@ -243,14 +244,30 @@ template <typename SerialiserType>
 bool WrappedIDirect3DDevice9::Serialise_SetVertexShader(SerialiserType &ser,
                                                          IDirect3DVertexShader9 *pShader)
 {
-  // Resource wrappers not yet available; serialize a placeholder ResourceId
-  SERIALISE_ELEMENT_LOCAL(Shader, ResourceId()).Important();
+  ResourceId Shader;
+  if(ser.IsWriting())
+    Shader = GetIDForD3D9Resource(pShader);
+  SERIALISE_ELEMENT(Shader).Important();
 
   SERIALISE_CHECK_READ_ERRORS();
 
   if(IsReplayingAndReading())
   {
-    // TODO: look up wrapped shader from ResourceId once resource wrappers exist
+    if(Shader != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(Shader);
+      if(res)
+      {
+        WrappedIDirect3DVertexShader9 *wrappedVS =
+            dynamic_cast<WrappedIDirect3DVertexShader9 *>(res);
+        if(wrappedVS)
+          m_pDevice->SetVertexShader(wrappedVS->GetReal());
+      }
+    }
+    else
+    {
+      m_pDevice->SetVertexShader(NULL);
+    }
     m_RenderState.vertexShader = Shader;
   }
 
@@ -261,13 +278,30 @@ template <typename SerialiserType>
 bool WrappedIDirect3DDevice9::Serialise_SetPixelShader(SerialiserType &ser,
                                                         IDirect3DPixelShader9 *pShader)
 {
-  SERIALISE_ELEMENT_LOCAL(Shader, ResourceId()).Important();
+  ResourceId Shader;
+  if(ser.IsWriting())
+    Shader = GetIDForD3D9Resource(pShader);
+  SERIALISE_ELEMENT(Shader).Important();
 
   SERIALISE_CHECK_READ_ERRORS();
 
   if(IsReplayingAndReading())
   {
-    // TODO: look up wrapped shader from ResourceId once resource wrappers exist
+    if(Shader != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(Shader);
+      if(res)
+      {
+        WrappedIDirect3DPixelShader9 *wrappedPS =
+            dynamic_cast<WrappedIDirect3DPixelShader9 *>(res);
+        if(wrappedPS)
+          m_pDevice->SetPixelShader(wrappedPS->GetReal());
+      }
+    }
+    else
+    {
+      m_pDevice->SetPixelShader(NULL);
+    }
     m_RenderState.pixelShader = Shader;
   }
 
@@ -278,13 +312,30 @@ template <typename SerialiserType>
 bool WrappedIDirect3DDevice9::Serialise_SetVertexDeclaration(SerialiserType &ser,
                                                               IDirect3DVertexDeclaration9 *pDecl)
 {
-  SERIALISE_ELEMENT_LOCAL(Decl, ResourceId()).Important();
+  ResourceId Decl;
+  if(ser.IsWriting())
+    Decl = GetIDForD3D9Resource(pDecl);
+  SERIALISE_ELEMENT(Decl).Important();
 
   SERIALISE_CHECK_READ_ERRORS();
 
   if(IsReplayingAndReading())
   {
-    // TODO: look up wrapped declaration from ResourceId once resource wrappers exist
+    if(Decl != ResourceId())
+    {
+      IUnknown *res = GetResourceManager()->GetResource(Decl);
+      if(res)
+      {
+        WrappedIDirect3DVertexDeclaration9 *wrappedDecl =
+            dynamic_cast<WrappedIDirect3DVertexDeclaration9 *>(res);
+        if(wrappedDecl)
+          m_pDevice->SetVertexDeclaration(wrappedDecl->GetReal());
+      }
+    }
+    else
+    {
+      m_pDevice->SetVertexDeclaration(NULL);
+    }
     m_RenderState.vertexDecl = Decl;
   }
 
@@ -685,6 +736,196 @@ bool WrappedIDirect3DDevice9::Serialise_SetSoftwareVertexProcessing(SerialiserTy
 }
 
 ///////////////////////////////////////////////////////////////////////////
+// Present / Reset / SwapChain Present
+///////////////////////////////////////////////////////////////////////////
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_Present(SerialiserType &ser, const RECT *pSourceRect,
+                                                 const RECT *pDestRect,
+                                                 HWND hDestWindowOverride,
+                                                 const RGNDATA *pDirtyRegion)
+{
+  // Present doesn't need to serialize its parameters for replay
+  // It just marks a frame boundary
+  if(IsReplayingAndReading())
+  {
+    m_pDevice->Present(NULL, NULL, NULL, NULL);
+  }
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_SwapChainPresent(SerialiserType &ser,
+                                                          const RECT *pSourceRect,
+                                                          const RECT *pDestRect,
+                                                          HWND hDestWindowOverride,
+                                                          const RGNDATA *pDirtyRegion)
+{
+  // SwapChain Present is the same as device Present for replay purposes
+  if(IsReplayingAndReading())
+  {
+    m_pDevice->Present(NULL, NULL, NULL, NULL);
+  }
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_Reset(SerialiserType &ser,
+                                               D3DPRESENT_PARAMETERS *pPresentationParameters)
+{
+  SERIALISE_ELEMENT_LOCAL(PresentParams,
+                          pPresentationParameters ? *pPresentationParameters
+                                                  : D3DPRESENT_PARAMETERS());
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    m_pDevice->Reset(&PresentParams);
+    m_InitParams.PresentationParameters = PresentParams;
+  }
+
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Draw calls
+///////////////////////////////////////////////////////////////////////////
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_DrawPrimitive(SerialiserType &ser,
+                                                       D3DPRIMITIVETYPE PrimitiveType,
+                                                       UINT StartVertex, UINT PrimitiveCount)
+{
+  SERIALISE_ELEMENT(PrimitiveType).Important();
+  SERIALISE_ELEMENT(StartVertex);
+  SERIALISE_ELEMENT(PrimitiveCount).Important();
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    m_pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+      ActionDescription action;
+      action.numIndices = D3D9_VertexCount(PrimitiveType, PrimitiveCount);
+      action.numInstances = 1;
+      action.vertexOffset = StartVertex;
+      action.flags |= ActionFlags::Drawcall;
+      AddAction(action);
+    }
+  }
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_DrawIndexedPrimitive(
+    SerialiserType &ser, D3DPRIMITIVETYPE Type, INT BaseVertexIndex, UINT MinVertexIndex,
+    UINT NumVertices, UINT startIndex, UINT primCount)
+{
+  SERIALISE_ELEMENT(Type).Important();
+  SERIALISE_ELEMENT(BaseVertexIndex);
+  SERIALISE_ELEMENT(MinVertexIndex);
+  SERIALISE_ELEMENT(NumVertices);
+  SERIALISE_ELEMENT(startIndex);
+  SERIALISE_ELEMENT(primCount).Important();
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    m_pDevice->DrawIndexedPrimitive(Type, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex,
+                                     primCount);
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+      ActionDescription action;
+      action.numIndices = D3D9_VertexCount(Type, primCount);
+      action.numInstances = 1;
+      action.indexOffset = startIndex;
+      action.baseVertex = BaseVertexIndex;
+      action.flags |= ActionFlags::Drawcall | ActionFlags::Indexed;
+      AddAction(action);
+    }
+  }
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_DrawPrimitiveUP(SerialiserType &ser,
+                                                         D3DPRIMITIVETYPE PrimitiveType,
+                                                         UINT PrimitiveCount,
+                                                         const void *pVertexStreamZeroData,
+                                                         UINT VertexStreamZeroStride)
+{
+  SERIALISE_ELEMENT(PrimitiveType).Important();
+  SERIALISE_ELEMENT(PrimitiveCount).Important();
+  SERIALISE_ELEMENT(VertexStreamZeroStride);
+
+  UINT vertexCount = D3D9_VertexCount(PrimitiveType, PrimitiveCount);
+  uint64_t dataSize = (uint64_t)vertexCount * VertexStreamZeroStride;
+  SERIALISE_ELEMENT_ARRAY(pVertexStreamZeroData, dataSize);
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    m_pDevice->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData,
+                                VertexStreamZeroStride);
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+      ActionDescription action;
+      action.numIndices = vertexCount;
+      action.numInstances = 1;
+      action.flags |= ActionFlags::Drawcall;
+      AddAction(action);
+    }
+  }
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_DrawIndexedPrimitiveUP(
+    SerialiserType &ser, D3DPRIMITIVETYPE PrimitiveType, UINT MinVertexIndex, UINT NumVertices,
+    UINT PrimitiveCount, const void *pIndexData, D3DFORMAT IndexDataFormat,
+    const void *pVertexStreamZeroData, UINT VertexStreamZeroStride)
+{
+  SERIALISE_ELEMENT(PrimitiveType).Important();
+  SERIALISE_ELEMENT(MinVertexIndex);
+  SERIALISE_ELEMENT(NumVertices);
+  SERIALISE_ELEMENT(PrimitiveCount).Important();
+  SERIALISE_ELEMENT(IndexDataFormat);
+  SERIALISE_ELEMENT(VertexStreamZeroStride);
+
+  UINT indexCount = D3D9_VertexCount(PrimitiveType, PrimitiveCount);
+  UINT indexSize = (IndexDataFormat == D3DFMT_INDEX16) ? 2 : 4;
+  uint64_t indexDataSize = (uint64_t)indexCount * indexSize;
+  SERIALISE_ELEMENT_ARRAY(pIndexData, indexDataSize);
+
+  uint64_t vertexDataSize = (uint64_t)NumVertices * VertexStreamZeroStride;
+  SERIALISE_ELEMENT_ARRAY(pVertexStreamZeroData, vertexDataSize);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    m_pDevice->DrawIndexedPrimitiveUP(PrimitiveType, MinVertexIndex, NumVertices, PrimitiveCount,
+                                       pIndexData, IndexDataFormat, pVertexStreamZeroData,
+                                       VertexStreamZeroStride);
+    if(IsLoading(m_State))
+    {
+      AddEvent();
+      ActionDescription action;
+      action.numIndices = indexCount;
+      action.numInstances = 1;
+      action.flags |= ActionFlags::Drawcall | ActionFlags::Indexed;
+      AddAction(action);
+    }
+  }
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////
 // Template instantiations
 ///////////////////////////////////////////////////////////////////////////
 
@@ -780,3 +1021,36 @@ INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, SetNPatchMode,
 
 INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, SetSoftwareVertexProcessing,
                                 BOOL bSoftware);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, Present, CONST RECT *pSourceRect,
+                                CONST RECT *pDestRect, HWND hDestWindowOverride,
+                                CONST RGNDATA *pDirtyRegion);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, Reset,
+                                D3DPRESENT_PARAMETERS *pPresentationParameters);
+
+template bool WrappedIDirect3DDevice9::Serialise_SwapChainPresent(
+    ReadSerialiser &ser, const RECT *pSourceRect, const RECT *pDestRect,
+    HWND hDestWindowOverride, const RGNDATA *pDirtyRegion);
+template bool WrappedIDirect3DDevice9::Serialise_SwapChainPresent(
+    WriteSerialiser &ser, const RECT *pSourceRect, const RECT *pDestRect,
+    HWND hDestWindowOverride, const RGNDATA *pDirtyRegion);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, DrawPrimitive,
+                                D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex,
+                                UINT PrimitiveCount);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, DrawIndexedPrimitive,
+                                D3DPRIMITIVETYPE PrimitiveType, INT BaseVertexIndex,
+                                UINT MinVertexIndex, UINT NumVertices, UINT startIndex,
+                                UINT primCount);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, DrawPrimitiveUP,
+                                D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount,
+                                CONST void *pVertexStreamZeroData, UINT VertexStreamZeroStride);
+
+INSTANTIATE_FUNCTION_SERIALISED(HRESULT, WrappedIDirect3DDevice9, DrawIndexedPrimitiveUP,
+                                D3DPRIMITIVETYPE PrimitiveType, UINT MinVertexIndex,
+                                UINT NumVertices, UINT PrimitiveCount, CONST void *pIndexData,
+                                D3DFORMAT IndexDataFormat, CONST void *pVertexStreamZeroData,
+                                UINT VertexStreamZeroStride);
