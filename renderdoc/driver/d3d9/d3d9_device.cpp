@@ -24,6 +24,7 @@
 
 #include "d3d9_device.h"
 #include "core/core.h"
+#include "d3d9_resources.h"
 #include "serialise/rdcfile.h"
 #include "strings/string_utils.h"
 
@@ -578,27 +579,130 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateTexture(
     UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool,
     IDirect3DTexture9 **ppTexture, HANDLE *pSharedHandle)
 {
-  // TODO: wrap created texture
-  return m_pDevice->CreateTexture(Width, Height, Levels, Usage, Format, Pool, ppTexture,
-                                  pSharedHandle);
+  IDirect3DTexture9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(
+      ret = m_pDevice->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &real,
+                                     pSharedHandle));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DTexture9 *wrappedTex = new WrappedIDirect3DTexture9(real, this);
+    IDirect3DTexture9 *wrappedPtr = wrappedTex;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedTex->GetResourceID());
+      record->resType = D3D9ResourceType::Texture;
+      record->pool = Pool;
+      record->usage = Usage;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateTexture);
+        Serialise_CreateTexture(ser, Width, Height, Levels, Usage, Format, Pool, &wrappedPtr,
+                                pSharedHandle);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppTexture = wrappedTex;
+  }
+  else
+  {
+    if(ppTexture)
+      *ppTexture = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateVolumeTexture(
     UINT Width, UINT Height, UINT Depth, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool,
     IDirect3DVolumeTexture9 **ppVolumeTexture, HANDLE *pSharedHandle)
 {
-  // TODO: wrap created volume texture
-  return m_pDevice->CreateVolumeTexture(Width, Height, Depth, Levels, Usage, Format, Pool,
-                                        ppVolumeTexture, pSharedHandle);
+  IDirect3DVolumeTexture9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreateVolumeTexture(Width, Height, Depth, Levels, Usage,
+                                                            Format, Pool, &real, pSharedHandle));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DVolumeTexture9 *wrappedVol = new WrappedIDirect3DVolumeTexture9(real, this);
+    IDirect3DVolumeTexture9 *wrappedPtr = wrappedVol;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedVol->GetResourceID());
+      record->resType = D3D9ResourceType::VolumeTexture;
+      record->pool = Pool;
+      record->usage = Usage;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateVolumeTexture);
+        Serialise_CreateVolumeTexture(ser, Width, Height, Depth, Levels, Usage, Format, Pool,
+                                      &wrappedPtr, pSharedHandle);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppVolumeTexture = wrappedVol;
+  }
+  else
+  {
+    if(ppVolumeTexture)
+      *ppVolumeTexture = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateCubeTexture(
     UINT EdgeLength, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool,
     IDirect3DCubeTexture9 **ppCubeTexture, HANDLE *pSharedHandle)
 {
-  // TODO: wrap created cube texture
-  return m_pDevice->CreateCubeTexture(EdgeLength, Levels, Usage, Format, Pool, ppCubeTexture,
-                                      pSharedHandle);
+  IDirect3DCubeTexture9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreateCubeTexture(EdgeLength, Levels, Usage, Format, Pool,
+                                                          &real, pSharedHandle));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DCubeTexture9 *wrappedCube = new WrappedIDirect3DCubeTexture9(real, this);
+    IDirect3DCubeTexture9 *wrappedPtr = wrappedCube;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedCube->GetResourceID());
+      record->resType = D3D9ResourceType::CubeTexture;
+      record->pool = Pool;
+      record->usage = Usage;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateCubeTexture);
+        Serialise_CreateCubeTexture(ser, EdgeLength, Levels, Usage, Format, Pool, &wrappedPtr,
+                                    pSharedHandle);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppCubeTexture = wrappedCube;
+  }
+  else
+  {
+    if(ppCubeTexture)
+      *ppCubeTexture = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateVertexBuffer(
@@ -621,19 +725,89 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateRenderTarget(
     UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample,
     DWORD MultisampleQuality, BOOL Lockable, IDirect3DSurface9 **ppSurface, HANDLE *pSharedHandle)
 {
-  // TODO: wrap created render target
-  return m_pDevice->CreateRenderTarget(Width, Height, Format, MultiSample, MultisampleQuality,
-                                       Lockable, ppSurface, pSharedHandle);
+  IDirect3DSurface9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreateRenderTarget(Width, Height, Format, MultiSample,
+                                                           MultisampleQuality, Lockable, &real,
+                                                           pSharedHandle));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DSurface9 *wrappedSurf = new WrappedIDirect3DSurface9(real, this);
+    IDirect3DSurface9 *wrappedPtr = wrappedSurf;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedSurf->GetResourceID());
+      record->resType = D3D9ResourceType::Surface;
+      record->pool = D3DPOOL_DEFAULT;
+      record->usage = D3DUSAGE_RENDERTARGET;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateRenderTarget);
+        Serialise_CreateRenderTarget(ser, Width, Height, Format, MultiSample, MultisampleQuality,
+                                     Lockable, &wrappedPtr, pSharedHandle);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppSurface = wrappedSurf;
+  }
+  else
+  {
+    if(ppSurface)
+      *ppSurface = NULL;
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateDepthStencilSurface(
     UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample,
     DWORD MultisampleQuality, BOOL Discard, IDirect3DSurface9 **ppSurface, HANDLE *pSharedHandle)
 {
-  // TODO: wrap created depth stencil surface
-  return m_pDevice->CreateDepthStencilSurface(Width, Height, Format, MultiSample,
-                                              MultisampleQuality, Discard, ppSurface,
-                                              pSharedHandle);
+  IDirect3DSurface9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreateDepthStencilSurface(
+                          Width, Height, Format, MultiSample, MultisampleQuality, Discard, &real,
+                          pSharedHandle));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DSurface9 *wrappedSurf = new WrappedIDirect3DSurface9(real, this);
+    IDirect3DSurface9 *wrappedPtr = wrappedSurf;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedSurf->GetResourceID());
+      record->resType = D3D9ResourceType::Surface;
+      record->pool = D3DPOOL_DEFAULT;
+      record->usage = D3DUSAGE_DEPTHSTENCIL;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateDepthStencilSurface);
+        Serialise_CreateDepthStencilSurface(ser, Width, Height, Format, MultiSample,
+                                            MultisampleQuality, Discard, &wrappedPtr,
+                                            pSharedHandle);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppSurface = wrappedSurf;
+  }
+  else
+  {
+    if(ppSurface)
+      *ppSurface = NULL;
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -685,9 +859,43 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateOffscreenPlainSurface(
     UINT Width, UINT Height, D3DFORMAT Format, D3DPOOL Pool, IDirect3DSurface9 **ppSurface,
     HANDLE *pSharedHandle)
 {
-  // TODO: wrap created surface
-  return m_pDevice->CreateOffscreenPlainSurface(Width, Height, Format, Pool, ppSurface,
-                                                pSharedHandle);
+  IDirect3DSurface9 *real = NULL;
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->CreateOffscreenPlainSurface(Width, Height, Format, Pool,
+                                                                    &real, pSharedHandle));
+
+  if(SUCCEEDED(ret))
+  {
+    WrappedIDirect3DSurface9 *wrappedSurf = new WrappedIDirect3DSurface9(real, this);
+    IDirect3DSurface9 *wrappedPtr = wrappedSurf;
+
+    if(IsCaptureMode(m_State))
+    {
+      D3D9ResourceRecord *record =
+          GetResourceManager()->AddResourceRecord(wrappedSurf->GetResourceID());
+      record->resType = D3D9ResourceType::Surface;
+      record->pool = Pool;
+      record->usage = 0;
+      record->Length = 0;
+
+      {
+        USE_SCRATCH_SERIALISER();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::CreateOffscreenPlainSurface);
+        Serialise_CreateOffscreenPlainSurface(ser, Width, Height, Format, Pool, &wrappedPtr,
+                                              pSharedHandle);
+        record->AddChunk(scope.Get());
+      }
+    }
+
+    *ppSurface = wrappedSurf;
+  }
+  else
+  {
+    if(ppSurface)
+      *ppSurface = NULL;
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -696,8 +904,18 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateOffscreenPlainSurface(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetRenderTarget(
     DWORD RenderTargetIndex, IDirect3DSurface9 *pRenderTarget)
 {
-  // TODO: update shadow state, unwrap surface, serialise
-  return m_pDevice->SetRenderTarget(RenderTargetIndex, pRenderTarget);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetRenderTarget(RenderTargetIndex, pRenderTarget));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetRenderTarget);
+    Serialise_SetRenderTarget(ser, RenderTargetIndex, pRenderTarget);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetRenderTarget(
@@ -710,8 +928,18 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetRenderTarget(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetDepthStencilSurface(
     IDirect3DSurface9 *pNewZStencil)
 {
-  // TODO: update shadow state, unwrap surface, serialise
-  return m_pDevice->SetDepthStencilSurface(pNewZStencil);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetDepthStencilSurface(pNewZStencil));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetDepthStencilSurface);
+    Serialise_SetDepthStencilSurface(ser, pNewZStencil);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetDepthStencilSurface(
@@ -726,14 +954,34 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetDepthStencilSurface(
 ///////////////////////////////////////////////////////////////////////////
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::BeginScene()
 {
-  // TODO: serialise
-  return m_pDevice->BeginScene();
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->BeginScene());
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::BeginScene);
+    Serialise_BeginScene(ser);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::EndScene()
 {
-  // TODO: serialise
-  return m_pDevice->EndScene();
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->EndScene());
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::EndScene);
+    Serialise_EndScene(ser);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -743,8 +991,18 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Clear(DWORD Count, CONST D3DR
                                                           DWORD Flags, D3DCOLOR Color, float Z,
                                                           DWORD Stencil)
 {
-  // TODO: serialise
-  return m_pDevice->Clear(Count, pRects, Flags, Color, Z, Stencil);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->Clear(Count, pRects, Flags, Color, Z, Stencil));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::Clear);
+    Serialise_Clear(ser, Count, pRects, Flags, Color, Z, Stencil);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -753,11 +1011,21 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Clear(DWORD Count, CONST D3DR
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetTransform(D3DTRANSFORMSTATETYPE State,
                                                                  CONST D3DMATRIX *pMatrix)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetTransform(State, pMatrix));
+
   if(pMatrix && (UINT)State < D3D9_MAX_TRANSFORMS)
     m_RenderState.transforms[(UINT)State] = *pMatrix;
 
-  // TODO: serialise
-  return m_pDevice->SetTransform(State, pMatrix);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetTransform);
+    Serialise_SetTransform(ser, State, pMatrix);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetTransform(D3DTRANSFORMSTATETYPE State,
@@ -783,11 +1051,21 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::MultiplyTransform(D3DTRANSFOR
 ///////////////////////////////////////////////////////////////////////////
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetViewport(CONST D3DVIEWPORT9 *pViewport)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetViewport(pViewport));
+
   if(pViewport)
     m_RenderState.viewport = *pViewport;
 
-  // TODO: serialise
-  return m_pDevice->SetViewport(pViewport);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetViewport);
+    Serialise_SetViewport(ser, pViewport);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetViewport(D3DVIEWPORT9 *pViewport)
@@ -805,11 +1083,21 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetViewport(D3DVIEWPORT9 *pVi
 ///////////////////////////////////////////////////////////////////////////
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetMaterial(CONST D3DMATERIAL9 *pMaterial)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetMaterial(pMaterial));
+
   if(pMaterial)
     m_RenderState.material = *pMaterial;
 
-  // TODO: serialise
-  return m_pDevice->SetMaterial(pMaterial);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetMaterial);
+    Serialise_SetMaterial(ser, pMaterial);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetMaterial(D3DMATERIAL9 *pMaterial)
@@ -828,6 +1116,9 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetMaterial(D3DMATERIAL9 *pMa
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetLight(DWORD Index,
                                                              CONST D3DLIGHT9 *pLight)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetLight(Index, pLight));
+
   if(pLight)
   {
     if(Index >= m_RenderState.lights.size())
@@ -835,8 +1126,15 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetLight(DWORD Index,
     m_RenderState.lights[Index].light = *pLight;
   }
 
-  // TODO: serialise
-  return m_pDevice->SetLight(Index, pLight);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetLight);
+    Serialise_SetLight(ser, Index, pLight);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetLight(DWORD Index, D3DLIGHT9 *pLight)
@@ -851,12 +1149,22 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetLight(DWORD Index, D3DLIGH
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::LightEnable(DWORD Index, BOOL Enable)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->LightEnable(Index, Enable));
+
   if(Index >= m_RenderState.lights.size())
     m_RenderState.lights.resize(Index + 1);
   m_RenderState.lights[Index].enabled = (Enable != FALSE);
 
-  // TODO: serialise
-  return m_pDevice->LightEnable(Index, Enable);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::LightEnable);
+    Serialise_LightEnable(ser, Index, Enable);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetLightEnable(DWORD Index, BOOL *pEnable)
@@ -875,11 +1183,21 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetLightEnable(DWORD Index, B
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetClipPlane(DWORD Index,
                                                                  CONST float *pPlane)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetClipPlane(Index, pPlane));
+
   if(pPlane && Index < D3D9_MAX_CLIP_PLANES)
     memcpy(m_RenderState.clipPlanes[Index], pPlane, sizeof(float) * 4);
 
-  // TODO: serialise
-  return m_pDevice->SetClipPlane(Index, pPlane);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetClipPlane);
+    Serialise_SetClipPlane(ser, Index, pPlane);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetClipPlane(DWORD Index, float *pPlane)
@@ -898,11 +1216,21 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetClipPlane(DWORD Index, flo
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetRenderState(D3DRENDERSTATETYPE State,
                                                                    DWORD Value)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetRenderState(State, Value));
+
   if((UINT)State < D3D9_MAX_RENDER_STATES)
     m_RenderState.renderStates[(UINT)State] = Value;
 
-  // TODO: serialise
-  return m_pDevice->SetRenderState(State, Value);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetRenderState);
+    Serialise_SetRenderState(ser, State, Value);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetRenderState(D3DRENDERSTATETYPE State,
@@ -968,8 +1296,18 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetTexture(DWORD Stage,
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetTexture(DWORD Stage,
                                                                IDirect3DBaseTexture9 *pTexture)
 {
-  // TODO: update shadow state, unwrap texture, serialise
-  return m_pDevice->SetTexture(Stage, pTexture);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetTexture(Stage, pTexture));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetTexture);
+    Serialise_SetTexture(ser, Stage, pTexture);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -989,11 +1327,21 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetTextureStageState(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetTextureStageState(
     DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD Value)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetTextureStageState(Stage, Type, Value));
+
   if(Stage < D3D9_MAX_TEXTURE_STAGES && (UINT)Type < D3D9_MAX_TSS_STATES)
     m_RenderState.textureStageStates[Stage][(UINT)Type] = Value;
 
-  // TODO: serialise
-  return m_pDevice->SetTextureStageState(Stage, Type, Value);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetTextureStageState);
+    Serialise_SetTextureStageState(ser, Stage, Type, Value);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1015,11 +1363,21 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetSamplerState(DWORD Sampler
                                                                     D3DSAMPLERSTATETYPE Type,
                                                                     DWORD Value)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetSamplerState(Sampler, Type, Value));
+
   if(Sampler < D3D9_TOTAL_SAMPLERS && (UINT)Type < D3D9_MAX_SAMPLER_STATES)
     m_RenderState.samplerStates[Sampler][(UINT)Type] = Value;
 
-  // TODO: serialise
-  return m_pDevice->SetSamplerState(Sampler, Type, Value);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetSamplerState);
+    Serialise_SetSamplerState(ser, Sampler, Type, Value);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1060,11 +1418,21 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetCurrentTexturePalette(UINT
 ///////////////////////////////////////////////////////////////////////////
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetScissorRect(CONST RECT *pRect)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetScissorRect(pRect));
+
   if(pRect)
     m_RenderState.scissor = *pRect;
 
-  // TODO: serialise
-  return m_pDevice->SetScissorRect(pRect);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetScissorRect);
+    Serialise_SetScissorRect(ser, pRect);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetScissorRect(RECT *pRect)
@@ -1082,10 +1450,20 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetScissorRect(RECT *pRect)
 ///////////////////////////////////////////////////////////////////////////
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetSoftwareVertexProcessing(BOOL bSoftware)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetSoftwareVertexProcessing(bSoftware));
+
   m_RenderState.softwareVertexProcessing = bSoftware;
 
-  // TODO: serialise
-  return m_pDevice->SetSoftwareVertexProcessing(bSoftware);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetSoftwareVertexProcessing);
+    Serialise_SetSoftwareVertexProcessing(ser, bSoftware);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 BOOL STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetSoftwareVertexProcessing()
@@ -1098,10 +1476,20 @@ BOOL STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetSoftwareVertexProcessing()
 ///////////////////////////////////////////////////////////////////////////
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetNPatchMode(float nSegments)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetNPatchMode(nSegments));
+
   m_RenderState.nPatchMode = nSegments;
 
-  // TODO: serialise
-  return m_pDevice->SetNPatchMode(nSegments);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetNPatchMode);
+    Serialise_SetNPatchMode(ser, nSegments);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 float STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetNPatchMode()
@@ -1173,8 +1561,18 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateVertexDeclaration(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexDeclaration(
     IDirect3DVertexDeclaration9 *pDecl)
 {
-  // TODO: update shadow state, unwrap, serialise
-  return m_pDevice->SetVertexDeclaration(pDecl);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetVertexDeclaration(pDecl));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetVertexDeclaration);
+    Serialise_SetVertexDeclaration(ser, pDecl);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexDeclaration(
@@ -1189,10 +1587,20 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexDeclaration(
 ///////////////////////////////////////////////////////////////////////////
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetFVF(DWORD FVF)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetFVF(FVF));
+
   m_RenderState.FVF = FVF;
 
-  // TODO: serialise
-  return m_pDevice->SetFVF(FVF);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetFVF);
+    Serialise_SetFVF(ser, FVF);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetFVF(DWORD *pFVF)
@@ -1218,8 +1626,18 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreateVertexShader(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexShader(
     IDirect3DVertexShader9 *pShader)
 {
-  // TODO: update shadow state, unwrap, serialise
-  return m_pDevice->SetVertexShader(pShader);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetVertexShader(pShader));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetVertexShader);
+    Serialise_SetVertexShader(ser, pShader);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShader(
@@ -1235,6 +1653,10 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShader(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexShaderConstantF(
     UINT StartRegister, CONST float *pConstantData, UINT Vector4fCount)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetVertexShaderConstantF(StartRegister, pConstantData,
+                                                                 Vector4fCount));
+
   if(pConstantData)
   {
     for(UINT i = 0; i < Vector4fCount && (StartRegister + i) < D3D9_MAX_VS_CONSTANTS_F; i++)
@@ -1242,8 +1664,15 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexShaderConstantF(
              sizeof(float) * 4);
   }
 
-  // TODO: serialise
-  return m_pDevice->SetVertexShaderConstantF(StartRegister, pConstantData, Vector4fCount);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetVertexShaderConstantF);
+    Serialise_SetVertexShaderConstantF(ser, StartRegister, pConstantData, Vector4fCount);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShaderConstantF(
@@ -1262,14 +1691,25 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShaderConstantF(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexShaderConstantI(
     UINT StartRegister, CONST int *pConstantData, UINT Vector4iCount)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetVertexShaderConstantI(StartRegister, pConstantData,
+                                                                 Vector4iCount));
+
   if(pConstantData)
   {
     for(UINT i = 0; i < Vector4iCount && (StartRegister + i) < D3D9_MAX_VS_CONSTANTS_I; i++)
       memcpy(m_RenderState.vsConstantsI[StartRegister + i], &pConstantData[i * 4], sizeof(int) * 4);
   }
 
-  // TODO: serialise
-  return m_pDevice->SetVertexShaderConstantI(StartRegister, pConstantData, Vector4iCount);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetVertexShaderConstantI);
+    Serialise_SetVertexShaderConstantI(ser, StartRegister, pConstantData, Vector4iCount);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShaderConstantI(
@@ -1287,14 +1727,25 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShaderConstantI(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetVertexShaderConstantB(
     UINT StartRegister, CONST BOOL *pConstantData, UINT BoolCount)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetVertexShaderConstantB(StartRegister, pConstantData,
+                                                                 BoolCount));
+
   if(pConstantData)
   {
     for(UINT i = 0; i < BoolCount && (StartRegister + i) < D3D9_MAX_VS_CONSTANTS_B; i++)
       m_RenderState.vsConstantsB[StartRegister + i] = pConstantData[i];
   }
 
-  // TODO: serialise
-  return m_pDevice->SetVertexShaderConstantB(StartRegister, pConstantData, BoolCount);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetVertexShaderConstantB);
+    Serialise_SetVertexShaderConstantB(ser, StartRegister, pConstantData, BoolCount);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShaderConstantB(
@@ -1315,15 +1766,26 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetVertexShaderConstantB(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetStreamSource(
     UINT StreamNumber, IDirect3DVertexBuffer9 *pStreamData, UINT OffsetInBytes, UINT Stride)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetStreamSource(StreamNumber, pStreamData, OffsetInBytes,
+                                                        Stride));
+
   if(StreamNumber < D3D9_MAX_STREAMS)
   {
     m_RenderState.streamSources[StreamNumber].offsetInBytes = OffsetInBytes;
     m_RenderState.streamSources[StreamNumber].stride = Stride;
-    // TODO: update buffer ResourceId in shadow state
+    // TODO: update buffer ResourceId in shadow state once resource wrappers exist
   }
 
-  // TODO: unwrap buffer, serialise
-  return m_pDevice->SetStreamSource(StreamNumber, pStreamData, OffsetInBytes, Stride);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetStreamSource);
+    Serialise_SetStreamSource(ser, StreamNumber, pStreamData, OffsetInBytes, Stride);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetStreamSource(
@@ -1336,11 +1798,21 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetStreamSource(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetStreamSourceFreq(UINT StreamNumber,
                                                                         UINT Setting)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetStreamSourceFreq(StreamNumber, Setting));
+
   if(StreamNumber < D3D9_MAX_STREAMS)
     m_RenderState.streamSources[StreamNumber].freq = Setting;
 
-  // TODO: serialise
-  return m_pDevice->SetStreamSourceFreq(StreamNumber, Setting);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetStreamSourceFreq);
+    Serialise_SetStreamSourceFreq(ser, StreamNumber, Setting);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetStreamSourceFreq(UINT StreamNumber,
@@ -1359,8 +1831,18 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetStreamSourceFreq(UINT Stre
 ///////////////////////////////////////////////////////////////////////////
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetIndices(IDirect3DIndexBuffer9 *pIndexData)
 {
-  // TODO: update shadow state, unwrap, serialise
-  return m_pDevice->SetIndices(pIndexData);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetIndices(pIndexData));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetIndices);
+    Serialise_SetIndices(ser, pIndexData);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetIndices(IDirect3DIndexBuffer9 **ppIndexData)
@@ -1381,8 +1863,18 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::CreatePixelShader(
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetPixelShader(IDirect3DPixelShader9 *pShader)
 {
-  // TODO: update shadow state, unwrap, serialise
-  return m_pDevice->SetPixelShader(pShader);
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetPixelShader(pShader));
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetPixelShader);
+    Serialise_SetPixelShader(ser, pShader);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetPixelShader(
@@ -1398,6 +1890,10 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetPixelShader(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetPixelShaderConstantF(
     UINT StartRegister, CONST float *pConstantData, UINT Vector4fCount)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetPixelShaderConstantF(StartRegister, pConstantData,
+                                                                Vector4fCount));
+
   if(pConstantData)
   {
     for(UINT i = 0; i < Vector4fCount && (StartRegister + i) < D3D9_MAX_PS_CONSTANTS_F; i++)
@@ -1405,8 +1901,15 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetPixelShaderConstantF(
              sizeof(float) * 4);
   }
 
-  // TODO: serialise
-  return m_pDevice->SetPixelShaderConstantF(StartRegister, pConstantData, Vector4fCount);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetPixelShaderConstantF);
+    Serialise_SetPixelShaderConstantF(ser, StartRegister, pConstantData, Vector4fCount);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetPixelShaderConstantF(
@@ -1425,14 +1928,25 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetPixelShaderConstantF(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetPixelShaderConstantI(
     UINT StartRegister, CONST int *pConstantData, UINT Vector4iCount)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetPixelShaderConstantI(StartRegister, pConstantData,
+                                                                Vector4iCount));
+
   if(pConstantData)
   {
     for(UINT i = 0; i < Vector4iCount && (StartRegister + i) < D3D9_MAX_PS_CONSTANTS_I; i++)
       memcpy(m_RenderState.psConstantsI[StartRegister + i], &pConstantData[i * 4], sizeof(int) * 4);
   }
 
-  // TODO: serialise
-  return m_pDevice->SetPixelShaderConstantI(StartRegister, pConstantData, Vector4iCount);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetPixelShaderConstantI);
+    Serialise_SetPixelShaderConstantI(ser, StartRegister, pConstantData, Vector4iCount);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetPixelShaderConstantI(
@@ -1450,14 +1964,25 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetPixelShaderConstantI(
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::SetPixelShaderConstantB(
     UINT StartRegister, CONST BOOL *pConstantData, UINT BoolCount)
 {
+  HRESULT ret;
+  SERIALISE_TIME_CALL(ret = m_pDevice->SetPixelShaderConstantB(StartRegister, pConstantData,
+                                                                BoolCount));
+
   if(pConstantData)
   {
     for(UINT i = 0; i < BoolCount && (StartRegister + i) < D3D9_MAX_PS_CONSTANTS_B; i++)
       m_RenderState.psConstantsB[StartRegister + i] = pConstantData[i];
   }
 
-  // TODO: serialise
-  return m_pDevice->SetPixelShaderConstantB(StartRegister, pConstantData, BoolCount);
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetPixelShaderConstantB);
+    Serialise_SetPixelShaderConstantB(ser, StartRegister, pConstantData, BoolCount);
+    m_DeviceRecord->AddChunk(scope.Get());
+  }
+
+  return ret;
 }
 
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::GetPixelShaderConstantB(
