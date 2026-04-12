@@ -66,5 +66,6 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   D3DQUERYTYPE m_Type;
 };

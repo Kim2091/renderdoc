@@ -24,11 +24,6 @@
 
 #pragma once
 
-// Suppress C4541: 'dynamic_cast' used on polymorphic type with /GR-.
-// D3D9 wrapped types inherit from COM interfaces which have vtables, so
-// dynamic_cast works in practice even without full RTTI.
-#pragma warning(disable : 4541)
-
 #include "common/common.h"
 #include "core/core.h"
 #include "serialise/serialiser.h"

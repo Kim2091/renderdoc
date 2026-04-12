@@ -258,10 +258,9 @@ bool WrappedIDirect3DDevice9::Serialise_SetVertexShader(SerialiserType &ser,
       IUnknown *res = GetResourceManager()->GetResource(Shader);
       if(res)
       {
-        WrappedIDirect3DVertexShader9 *wrappedVS =
-            dynamic_cast<WrappedIDirect3DVertexShader9 *>(res);
-        if(wrappedVS)
-          m_pDevice->SetVertexShader(wrappedVS->GetReal());
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          m_pDevice->SetVertexShader((IDirect3DVertexShader9 *)info->realObject);
       }
     }
     else
@@ -292,10 +291,9 @@ bool WrappedIDirect3DDevice9::Serialise_SetPixelShader(SerialiserType &ser,
       IUnknown *res = GetResourceManager()->GetResource(Shader);
       if(res)
       {
-        WrappedIDirect3DPixelShader9 *wrappedPS =
-            dynamic_cast<WrappedIDirect3DPixelShader9 *>(res);
-        if(wrappedPS)
-          m_pDevice->SetPixelShader(wrappedPS->GetReal());
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          m_pDevice->SetPixelShader((IDirect3DPixelShader9 *)info->realObject);
       }
     }
     else
@@ -326,10 +324,9 @@ bool WrappedIDirect3DDevice9::Serialise_SetVertexDeclaration(SerialiserType &ser
       IUnknown *res = GetResourceManager()->GetResource(Decl);
       if(res)
       {
-        WrappedIDirect3DVertexDeclaration9 *wrappedDecl =
-            dynamic_cast<WrappedIDirect3DVertexDeclaration9 *>(res);
-        if(wrappedDecl)
-          m_pDevice->SetVertexDeclaration(wrappedDecl->GetReal());
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          m_pDevice->SetVertexDeclaration((IDirect3DVertexDeclaration9 *)info->realObject);
       }
     }
     else
@@ -818,16 +815,16 @@ bool WrappedIDirect3DDevice9::Serialise_UpdateSurface(SerialiserType &ser,
     if(srcId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(srcId);
-      WrappedIDirect3DSurface9 *wrappedSrc = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
-      if(wrappedSrc)
-        src = wrappedSrc->GetReal();
+      D3D9WrappedInfo *srcInfo = GetD3D9WrappedInfo(res);
+      if(srcInfo)
+        src = (IDirect3DSurface9 *)srcInfo->realObject;
     }
     if(dstId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(dstId);
-      WrappedIDirect3DSurface9 *wrappedDst = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
-      if(wrappedDst)
-        dst = wrappedDst->GetReal();
+      D3D9WrappedInfo *dstInfo = GetD3D9WrappedInfo(res);
+      if(dstInfo)
+        dst = (IDirect3DSurface9 *)dstInfo->realObject;
     }
     if(src && dst)
       m_pDevice->UpdateSurface(src, pSourceRect, dst, pDestPoint);
@@ -858,25 +855,16 @@ bool WrappedIDirect3DDevice9::Serialise_UpdateTexture(SerialiserType &ser,
     if(srcId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(srcId);
-      // Try each texture wrapper type
-      if(WrappedIDirect3DTexture9 *tex = dynamic_cast<WrappedIDirect3DTexture9 *>(res))
-        src = tex->GetReal();
-      else if(WrappedIDirect3DCubeTexture9 *cube = dynamic_cast<WrappedIDirect3DCubeTexture9 *>(res))
-        src = cube->GetReal();
-      else if(WrappedIDirect3DVolumeTexture9 *vol =
-                  dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(res))
-        src = vol->GetReal();
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+      if(info)
+        src = (IDirect3DBaseTexture9 *)info->realObject;
     }
     if(dstId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(dstId);
-      if(WrappedIDirect3DTexture9 *tex = dynamic_cast<WrappedIDirect3DTexture9 *>(res))
-        dst = tex->GetReal();
-      else if(WrappedIDirect3DCubeTexture9 *cube = dynamic_cast<WrappedIDirect3DCubeTexture9 *>(res))
-        dst = cube->GetReal();
-      else if(WrappedIDirect3DVolumeTexture9 *vol =
-                  dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(res))
-        dst = vol->GetReal();
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+      if(info)
+        dst = (IDirect3DBaseTexture9 *)info->realObject;
     }
     if(src && dst)
       m_pDevice->UpdateTexture(src, dst);
@@ -913,16 +901,16 @@ bool WrappedIDirect3DDevice9::Serialise_StretchRect(SerialiserType &ser,
     if(srcId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(srcId);
-      WrappedIDirect3DSurface9 *wrappedSrc = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
-      if(wrappedSrc)
-        src = wrappedSrc->GetReal();
+      D3D9WrappedInfo *srcInfo = GetD3D9WrappedInfo(res);
+      if(srcInfo)
+        src = (IDirect3DSurface9 *)srcInfo->realObject;
     }
     if(dstId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(dstId);
-      WrappedIDirect3DSurface9 *wrappedDst = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
-      if(wrappedDst)
-        dst = wrappedDst->GetReal();
+      D3D9WrappedInfo *dstInfo = GetD3D9WrappedInfo(res);
+      if(dstInfo)
+        dst = (IDirect3DSurface9 *)dstInfo->realObject;
     }
     if(src && dst)
       m_pDevice->StretchRect(src, pSourceRect, dst, pDestRect, Filter);
@@ -949,9 +937,9 @@ bool WrappedIDirect3DDevice9::Serialise_ColorFill(SerialiserType &ser,
     if(surfId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(surfId);
-      WrappedIDirect3DSurface9 *wrappedSurf = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
-      if(wrappedSurf)
-        m_pDevice->ColorFill(wrappedSurf->GetReal(), pRect, color);
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+      if(info)
+        m_pDevice->ColorFill((IDirect3DSurface9 *)info->realObject, pRect, color);
     }
   }
 
@@ -980,16 +968,16 @@ bool WrappedIDirect3DDevice9::Serialise_GetRenderTargetData(SerialiserType &ser,
     if(srcId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(srcId);
-      WrappedIDirect3DSurface9 *wrappedSrc = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
-      if(wrappedSrc)
-        src = wrappedSrc->GetReal();
+      D3D9WrappedInfo *srcInfo = GetD3D9WrappedInfo(res);
+      if(srcInfo)
+        src = (IDirect3DSurface9 *)srcInfo->realObject;
     }
     if(dstId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(dstId);
-      WrappedIDirect3DSurface9 *wrappedDst = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
-      if(wrappedDst)
-        dst = wrappedDst->GetReal();
+      D3D9WrappedInfo *dstInfo = GetD3D9WrappedInfo(res);
+      if(dstInfo)
+        dst = (IDirect3DSurface9 *)dstInfo->realObject;
     }
     if(src && dst)
       m_pDevice->GetRenderTargetData(src, dst);
@@ -1014,9 +1002,9 @@ bool WrappedIDirect3DDevice9::Serialise_GetFrontBufferData(SerialiserType &ser, 
     if(dstId != ResourceId())
     {
       IUnknown *res = GetResourceManager()->GetResource(dstId);
-      WrappedIDirect3DSurface9 *wrappedDst = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
-      if(wrappedDst)
-        m_pDevice->GetFrontBufferData(iSwapChain, wrappedDst->GetReal());
+      D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+      if(info)
+        m_pDevice->GetFrontBufferData(iSwapChain, (IDirect3DSurface9 *)info->realObject);
     }
   }
 

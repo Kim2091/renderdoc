@@ -814,7 +814,7 @@ void D3D9Replay::GetBufferData(ResourceId buff, uint64_t offset, uint64_t len, b
     HRESULT hr = vb->Lock((UINT)offset, (UINT)len, &data, D3DLOCK_READONLY);
     if(SUCCEEDED(hr) && data)
     {
-      retData.assign((byte *)data, len);
+      retData.assign((byte *)data, (size_t)len);
       vb->Unlock();
     }
     vb->Release();
@@ -834,7 +834,7 @@ void D3D9Replay::GetBufferData(ResourceId buff, uint64_t offset, uint64_t len, b
     HRESULT hr = ib->Lock((UINT)offset, (UINT)len, &data, D3DLOCK_READONLY);
     if(SUCCEEDED(hr) && data)
     {
-      retData.assign((byte *)data, len);
+      retData.assign((byte *)data, (size_t)len);
       ib->Unlock();
     }
     ib->Release();

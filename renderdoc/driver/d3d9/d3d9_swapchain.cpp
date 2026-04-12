@@ -23,6 +23,7 @@
  ******************************************************************************/
 
 #include "d3d9_swapchain.h"
+#include "core/core.h"
 #include "d3d9_resources.h"
 
 WrappedIDirect3DSwapChain9::WrappedIDirect3DSwapChain9(IDirect3DSwapChain9 *real,
@@ -109,8 +110,13 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DSwapChain9::Present(CONST RECT *pSourc
                                                                CONST RGNDATA *pDirtyRegion,
                                                                DWORD dwFlags)
 {
+  if(IsBackgroundCapturing(m_pDevice->GetState()))
+    RenderDoc::Inst().Tick();
+
   // Increment the device's frame counter
   m_pDevice->IncrementFrameCounter();
+
+  RenderDoc::Inst().AddActiveDriver(RDCDriver::D3D9, true);
 
   if(IsActiveCapturing(m_pDevice->GetState()))
   {
@@ -127,14 +133,14 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DSwapChain9::Present(CONST RECT *pSourc
     RenderDoc::Inst().EndFrameCapture(
         DeviceOwnedWindow((void *)m_pDevice, NULL));
   }
-  else
+
+  if(IsBackgroundCapturing(m_pDevice->GetState()) &&
+     RenderDoc::Inst().ShouldTriggerCapture(m_pDevice->GetFrameCounter()))
   {
-    // Check if a capture was requested
-    if(RenderDoc::Inst().ShouldTriggerCapture(m_pDevice->GetFrameCounter()))
-    {
-      RenderDoc::Inst().StartFrameCapture(
-          DeviceOwnedWindow((void *)m_pDevice, NULL));
-    }
+    RenderDoc::Inst().StartFrameCapture(
+        DeviceOwnedWindow((void *)m_pDevice, NULL));
+
+    m_pDevice->SetLastCapturedFrameNumber(m_pDevice->GetFrameCounter());
   }
 
   return m_pReal->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);

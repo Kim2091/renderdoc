@@ -35,6 +35,41 @@
 
 #include "d3d9_chunks.h"
 
+///////////////////////////////////////////////////////////////////////////
+// QI-based type identification for wrapped D3D9 resources (replaces RTTI)
+///////////////////////////////////////////////////////////////////////////
+
+// Custom GUID used to identify our wrapped objects via QueryInterface.
+// {D3D9EEEE-0000-0000-0000-52454E440001}
+static const GUID IID_ID3D9WrappedResource = {
+    0xd3d9eeee, 0x0, 0x0, {0x0, 0x0, 0x52, 0x45, 0x4e, 0x44, 0x0, 0x01}};
+
+enum class D3D9WrappedType : uint32_t
+{
+  Texture,
+  CubeTexture,
+  VolumeTexture,
+  Surface,
+  Volume,
+  VertexBuffer,
+  IndexBuffer,
+  VertexShader,
+  PixelShader,
+  VertexDeclaration,
+  StateBlock,
+  Query,
+  SwapChain,
+};
+
+// Info struct returned by custom QI on our wrappers.
+// Callers get a pointer to this struct (no AddRef — it is just info).
+struct D3D9WrappedInfo
+{
+  D3D9WrappedType type;
+  ResourceId id;
+  IUnknown *realObject;
+};
+
 // Forward declarations
 class WrappedIDirect3DDevice9;
 class WrappedIDirect3D9;

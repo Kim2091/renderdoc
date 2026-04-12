@@ -36,6 +36,37 @@ class WrappedIDirect3DVolume9;
 // Returns ResourceId() if the pointer is NULL or unrecognised.
 ResourceId GetIDForD3D9Resource(IUnknown *resource);
 
+// Helper to get wrapped type info via custom QI. Returns NULL if not a wrapped resource.
+inline D3D9WrappedInfo *GetD3D9WrappedInfo(IUnknown *resource)
+{
+  if(!resource)
+    return NULL;
+  D3D9WrappedInfo *info = NULL;
+  if(SUCCEEDED(resource->QueryInterface(IID_ID3D9WrappedResource, (void **)&info)))
+    return info;
+  return NULL;
+}
+
+// Helper to get the D3D9WrappedType of a resource. Returns (D3D9WrappedType)-1 if not wrapped.
+inline D3D9WrappedType GetD3D9WrappedType(IUnknown *resource)
+{
+  D3D9WrappedInfo *info = GetD3D9WrappedInfo(resource);
+  if(info)
+    return info->type;
+  return (D3D9WrappedType)-1;
+}
+
+// Helper to unwrap a D3D9 resource to its real IUnknown. Returns the input if not wrapped.
+inline IUnknown *UnwrapD3D9Resource(IUnknown *resource)
+{
+  if(!resource)
+    return NULL;
+  D3D9WrappedInfo *info = GetD3D9WrappedInfo(resource);
+  if(info)
+    return info->realObject;
+  return resource;
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // Lock tracking structures
 ///////////////////////////////////////////////////////////////////////////
@@ -123,6 +154,7 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   D3D9LockedRect m_Lock;
 };
 
@@ -171,6 +203,7 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   D3D9LockedBox m_Lock;
 };
 
@@ -236,6 +269,7 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   D3D9LockedRect m_Lock;
 };
 
@@ -303,6 +337,7 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   D3D9CubeLockedRect m_Lock;
 };
 
@@ -368,5 +403,6 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   D3D9LockedBox m_Lock;
 };

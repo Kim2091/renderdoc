@@ -46,6 +46,7 @@ WrappedIDirect3DVertexBuffer9::WrappedIDirect3DVertexBuffer9(IDirect3DVertexBuff
   if(id == ResourceId())
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
+  m_WrappedInfo = {D3D9WrappedType::VertexBuffer, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -106,6 +107,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DVertexBuffer9::QueryInterface(REFIID r
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DVertexBuffer9 *)this;
@@ -242,6 +248,7 @@ WrappedIDirect3DIndexBuffer9::WrappedIDirect3DIndexBuffer9(IDirect3DIndexBuffer9
   if(id == ResourceId())
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
+  m_WrappedInfo = {D3D9WrappedType::IndexBuffer, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -302,6 +309,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DIndexBuffer9::QueryInterface(REFIID ri
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DIndexBuffer9 *)this;

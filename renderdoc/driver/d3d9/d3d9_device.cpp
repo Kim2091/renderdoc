@@ -30,6 +30,7 @@
 #include "d3d9_resources.h"
 #include "d3d9_shaders.h"
 #include "d3d9_stateblock.h"
+#include "os/os_specific.h"
 #include "serialise/rdcfile.h"
 #include "strings/string_utils.h"
 
@@ -97,6 +98,10 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real, Wrapped
 
     RenderDoc::Inst().AddDeviceFrameCapturer((IDirect3DDevice9 *)this, this);
 
+    if(pPresentationParameters && pPresentationParameters->hDeviceWindow)
+      Keyboard::AddInputWindow(WindowingSystem::Win32,
+                               (void *)pPresentationParameters->hDeviceWindow);
+
     RDCLOG("Created D3D9 device.");
   }
 }
@@ -151,6 +156,10 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real,
 WrappedIDirect3DDevice9::~WrappedIDirect3DDevice9()
 {
   RenderDoc::Inst().RemoveDeviceFrameCapturer((IDirect3DDevice9 *)this);
+
+  if(m_InitParams.PresentationParameters.hDeviceWindow)
+    Keyboard::RemoveInputWindow(WindowingSystem::Win32,
+                                (void *)m_InitParams.PresentationParameters.hDeviceWindow);
 
   SAFE_DELETE(m_StoredStructuredData);
 
@@ -610,7 +619,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Present(CONST RECT *pSourceRe
                                                             HWND hDestWindowOverride,
                                                             CONST RGNDATA *pDirtyRegion)
 {
+  if(IsBackgroundCapturing(m_State))
+    RenderDoc::Inst().Tick();
+
   m_FrameCounter++;
+
+  RenderDoc::Inst().AddActiveDriver(RDCDriver::D3D9, true);
 
   if(IsActiveCapturing(m_State))
   {
@@ -625,13 +639,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Present(CONST RECT *pSourceRe
     // End the frame capture
     RenderDoc::Inst().EndFrameCapture(DeviceOwnedWindow((void *)this, NULL));
   }
-  else
+
+  if(IsBackgroundCapturing(m_State) && RenderDoc::Inst().ShouldTriggerCapture(m_FrameCounter))
   {
-    // Check if a capture was requested
-    if(RenderDoc::Inst().ShouldTriggerCapture(m_FrameCounter))
-    {
-      RenderDoc::Inst().StartFrameCapture(DeviceOwnedWindow((void *)this, NULL));
-    }
+    RenderDoc::Inst().StartFrameCapture(DeviceOwnedWindow((void *)this, NULL));
+
+    m_CapturedFrames.back().frameNumber = m_FrameCounter;
   }
 
   return m_pDevice->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);

@@ -65,6 +65,7 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   rdcarray<DWORD> m_Bytecode;
 };
 
@@ -105,6 +106,7 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   rdcarray<DWORD> m_Bytecode;
 };
 
@@ -148,5 +150,6 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   rdcarray<D3DVERTEXELEMENT9> m_Elements;
 };

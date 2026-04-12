@@ -81,6 +81,7 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   DWORD m_Usage;
   UINT m_Length;
   byte *m_ShadowData;
@@ -145,6 +146,7 @@ private:
   int32_t m_ExtRef;
   int32_t m_IntRef;
 
+  D3D9WrappedInfo m_WrappedInfo;
   DWORD m_Usage;
   UINT m_Length;
   D3DFORMAT m_Format;

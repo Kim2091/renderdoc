@@ -37,6 +37,7 @@ WrappedIDirect3DStateBlock9::WrappedIDirect3DStateBlock9(IDirect3DStateBlock9 *r
   if(id == ResourceId())
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
+  m_WrappedInfo = {D3D9WrappedType::StateBlock, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -89,6 +90,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DStateBlock9::QueryInterface(REFIID rii
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DStateBlock9 *)this;
@@ -238,10 +244,9 @@ bool WrappedIDirect3DDevice9::Serialise_StateBlockCapture(SerialiserType &ser,
       IUnknown *res = GetResourceManager()->GetResource(id);
       if(res)
       {
-        WrappedIDirect3DStateBlock9 *wrappedSB =
-            dynamic_cast<WrappedIDirect3DStateBlock9 *>(res);
-        if(wrappedSB)
-          wrappedSB->GetReal()->Capture();
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          ((IDirect3DStateBlock9 *)info->realObject)->Capture();
       }
     }
   }
@@ -267,10 +272,9 @@ bool WrappedIDirect3DDevice9::Serialise_StateBlockApply(SerialiserType &ser,
       IUnknown *res = GetResourceManager()->GetResource(id);
       if(res)
       {
-        WrappedIDirect3DStateBlock9 *wrappedSB =
-            dynamic_cast<WrappedIDirect3DStateBlock9 *>(res);
-        if(wrappedSB)
-          wrappedSB->GetReal()->Apply();
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          ((IDirect3DStateBlock9 *)info->realObject)->Apply();
       }
     }
   }

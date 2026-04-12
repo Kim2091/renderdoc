@@ -32,20 +32,20 @@
 
 static D3D9ResourceType IdentifyResourceType(IUnknown *res)
 {
-  if(dynamic_cast<WrappedIDirect3DVertexBuffer9 *>(res))
-    return D3D9ResourceType::VertexBuffer;
-  if(dynamic_cast<WrappedIDirect3DIndexBuffer9 *>(res))
-    return D3D9ResourceType::IndexBuffer;
-  if(dynamic_cast<WrappedIDirect3DTexture9 *>(res))
-    return D3D9ResourceType::Texture;
-  if(dynamic_cast<WrappedIDirect3DCubeTexture9 *>(res))
-    return D3D9ResourceType::CubeTexture;
-  if(dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(res))
-    return D3D9ResourceType::VolumeTexture;
-  if(dynamic_cast<WrappedIDirect3DSurface9 *>(res))
-    return D3D9ResourceType::Surface;
+  D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+  if(!info)
+    return D3D9ResourceType::Unknown;
 
-  return D3D9ResourceType::Unknown;
+  switch(info->type)
+  {
+    case D3D9WrappedType::VertexBuffer: return D3D9ResourceType::VertexBuffer;
+    case D3D9WrappedType::IndexBuffer: return D3D9ResourceType::IndexBuffer;
+    case D3D9WrappedType::Texture: return D3D9ResourceType::Texture;
+    case D3D9WrappedType::CubeTexture: return D3D9ResourceType::CubeTexture;
+    case D3D9WrappedType::VolumeTexture: return D3D9ResourceType::VolumeTexture;
+    case D3D9WrappedType::Surface: return D3D9ResourceType::Surface;
+    default: return D3D9ResourceType::Unknown;
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -85,7 +85,7 @@ bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
   if(type == D3D9ResourceType::VertexBuffer)
   {
     WrappedIDirect3DVertexBuffer9 *wrapper =
-        dynamic_cast<WrappedIDirect3DVertexBuffer9 *>(res);
+        static_cast<WrappedIDirect3DVertexBuffer9 *>((IDirect3DVertexBuffer9 *)res);
     if(!wrapper)
       return false;
 
@@ -131,7 +131,7 @@ bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
   if(type == D3D9ResourceType::IndexBuffer)
   {
     WrappedIDirect3DIndexBuffer9 *wrapper =
-        dynamic_cast<WrappedIDirect3DIndexBuffer9 *>(res);
+        static_cast<WrappedIDirect3DIndexBuffer9 *>((IDirect3DIndexBuffer9 *)res);
     if(!wrapper)
       return false;
 
@@ -174,7 +174,8 @@ bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
   ///////////////////////////////////////////////////////////////////////////
   if(type == D3D9ResourceType::Texture)
   {
-    WrappedIDirect3DTexture9 *wrapper = dynamic_cast<WrappedIDirect3DTexture9 *>(res);
+    WrappedIDirect3DTexture9 *wrapper =
+        static_cast<WrappedIDirect3DTexture9 *>((IDirect3DTexture9 *)res);
     if(!wrapper)
       return false;
 
@@ -194,7 +195,7 @@ bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
     }
 
     D3D9InitialContents initial(D3D9ResourceType::Texture, NULL);
-    initial.shadowData = new byte[totalSize];
+    initial.shadowData = new byte[(size_t)totalSize];
     initial.shadowDataLen = totalSize;
 
     byte *dst = initial.shadowData;
@@ -330,7 +331,7 @@ bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
   if(type == D3D9ResourceType::CubeTexture)
   {
     WrappedIDirect3DCubeTexture9 *wrapper =
-        dynamic_cast<WrappedIDirect3DCubeTexture9 *>(res);
+        static_cast<WrappedIDirect3DCubeTexture9 *>((IDirect3DCubeTexture9 *)res);
     if(!wrapper)
       return false;
 
@@ -350,7 +351,7 @@ bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
     }
 
     D3D9InitialContents initial(D3D9ResourceType::CubeTexture, NULL);
-    initial.shadowData = new byte[totalSize];
+    initial.shadowData = new byte[(size_t)totalSize];
     initial.shadowDataLen = totalSize;
 
     byte *dst = initial.shadowData;
@@ -412,7 +413,7 @@ bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
   if(type == D3D9ResourceType::VolumeTexture)
   {
     WrappedIDirect3DVolumeTexture9 *wrapper =
-        dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(res);
+        static_cast<WrappedIDirect3DVolumeTexture9 *>((IDirect3DVolumeTexture9 *)res);
     if(!wrapper)
       return false;
 
@@ -433,7 +434,7 @@ bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
     }
 
     D3D9InitialContents initial(D3D9ResourceType::VolumeTexture, NULL);
-    initial.shadowData = new byte[totalSize];
+    initial.shadowData = new byte[(size_t)totalSize];
     initial.shadowDataLen = totalSize;
 
     byte *dst = initial.shadowData;
@@ -492,7 +493,8 @@ bool WrappedIDirect3DDevice9::Prepare_InitialState(IUnknown *res)
   ///////////////////////////////////////////////////////////////////////////
   if(type == D3D9ResourceType::Surface)
   {
-    WrappedIDirect3DSurface9 *wrapper = dynamic_cast<WrappedIDirect3DSurface9 *>(res);
+    WrappedIDirect3DSurface9 *wrapper =
+        static_cast<WrappedIDirect3DSurface9 *>((IDirect3DSurface9 *)res);
     if(!wrapper)
       return false;
 
@@ -631,7 +633,7 @@ void WrappedIDirect3DDevice9::Apply_InitialState(IUnknown *live, D3D9InitialCont
   if(type == D3D9ResourceType::VertexBuffer)
   {
     WrappedIDirect3DVertexBuffer9 *wrapper =
-        dynamic_cast<WrappedIDirect3DVertexBuffer9 *>(live);
+        static_cast<WrappedIDirect3DVertexBuffer9 *>((IDirect3DVertexBuffer9 *)live);
     if(!wrapper)
       return;
 
@@ -656,7 +658,7 @@ void WrappedIDirect3DDevice9::Apply_InitialState(IUnknown *live, D3D9InitialCont
   if(type == D3D9ResourceType::IndexBuffer)
   {
     WrappedIDirect3DIndexBuffer9 *wrapper =
-        dynamic_cast<WrappedIDirect3DIndexBuffer9 *>(live);
+        static_cast<WrappedIDirect3DIndexBuffer9 *>((IDirect3DIndexBuffer9 *)live);
     if(!wrapper)
       return;
 
@@ -680,7 +682,8 @@ void WrappedIDirect3DDevice9::Apply_InitialState(IUnknown *live, D3D9InitialCont
   ///////////////////////////////////////////////////////////////////////////
   if(type == D3D9ResourceType::Texture)
   {
-    WrappedIDirect3DTexture9 *wrapper = dynamic_cast<WrappedIDirect3DTexture9 *>(live);
+    WrappedIDirect3DTexture9 *wrapper =
+        static_cast<WrappedIDirect3DTexture9 *>((IDirect3DTexture9 *)live);
     if(!wrapper)
       return;
 
@@ -733,7 +736,7 @@ void WrappedIDirect3DDevice9::Apply_InitialState(IUnknown *live, D3D9InitialCont
   if(type == D3D9ResourceType::CubeTexture)
   {
     WrappedIDirect3DCubeTexture9 *wrapper =
-        dynamic_cast<WrappedIDirect3DCubeTexture9 *>(live);
+        static_cast<WrappedIDirect3DCubeTexture9 *>((IDirect3DCubeTexture9 *)live);
     if(!wrapper)
       return;
 
@@ -792,7 +795,7 @@ void WrappedIDirect3DDevice9::Apply_InitialState(IUnknown *live, D3D9InitialCont
   if(type == D3D9ResourceType::VolumeTexture)
   {
     WrappedIDirect3DVolumeTexture9 *wrapper =
-        dynamic_cast<WrappedIDirect3DVolumeTexture9 *>(live);
+        static_cast<WrappedIDirect3DVolumeTexture9 *>((IDirect3DVolumeTexture9 *)live);
     if(!wrapper)
       return;
 
@@ -850,7 +853,8 @@ void WrappedIDirect3DDevice9::Apply_InitialState(IUnknown *live, D3D9InitialCont
   ///////////////////////////////////////////////////////////////////////////
   if(type == D3D9ResourceType::Surface)
   {
-    WrappedIDirect3DSurface9 *wrapper = dynamic_cast<WrappedIDirect3DSurface9 *>(live);
+    WrappedIDirect3DSurface9 *wrapper =
+        static_cast<WrappedIDirect3DSurface9 *>((IDirect3DSurface9 *)live);
     if(!wrapper)
       return;
 

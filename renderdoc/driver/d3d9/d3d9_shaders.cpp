@@ -37,6 +37,7 @@ WrappedIDirect3DVertexShader9::WrappedIDirect3DVertexShader9(IDirect3DVertexShad
   if(id == ResourceId())
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
+  m_WrappedInfo = {D3D9WrappedType::VertexShader, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -98,6 +99,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DVertexShader9::QueryInterface(REFIID r
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DVertexShader9 *)this;
@@ -160,6 +166,7 @@ WrappedIDirect3DPixelShader9::WrappedIDirect3DPixelShader9(IDirect3DPixelShader9
   if(id == ResourceId())
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
+  m_WrappedInfo = {D3D9WrappedType::PixelShader, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -221,6 +228,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DPixelShader9::QueryInterface(REFIID ri
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DPixelShader9 *)this;
@@ -282,6 +294,7 @@ WrappedIDirect3DVertexDeclaration9::WrappedIDirect3DVertexDeclaration9(
   if(id == ResourceId())
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
+  m_WrappedInfo = {D3D9WrappedType::VertexDeclaration, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -344,6 +357,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DVertexDeclaration9::QueryInterface(REF
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DVertexDeclaration9 *)this;

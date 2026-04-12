@@ -127,6 +127,7 @@ public:
 
   void IncrementFrameCounter() { m_FrameCounter++; }
   uint32_t GetFrameCounter() const { return m_FrameCounter; }
+  void SetLastCapturedFrameNumber(uint32_t num) { m_CapturedFrames.back().frameNumber = num; }
 
   // SwapChain Present serialization (called from WrappedIDirect3DSwapChain9)
   template <typename SerialiserType>

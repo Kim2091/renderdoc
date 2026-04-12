@@ -62,4 +62,6 @@ private:
   WrappedIDirect3DDevice9 *m_pDevice;
   int32_t m_ExtRef;
   int32_t m_IntRef;
+
+  D3D9WrappedInfo m_WrappedInfo;
 };

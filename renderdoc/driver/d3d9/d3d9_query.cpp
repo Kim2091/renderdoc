@@ -37,6 +37,7 @@ WrappedIDirect3DQuery9::WrappedIDirect3DQuery9(IDirect3DQuery9 *real,
   if(id == ResourceId())
     id = ResourceIDGen::GetNewUniqueID();
   m_ID = id;
+  m_WrappedInfo = {D3D9WrappedType::Query, m_ID, m_pReal};
 
   m_pDevice->AddRef();
 
@@ -89,6 +90,11 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DQuery9::QueryInterface(REFIID riid, vo
   if(ppvObj == NULL)
     return E_POINTER;
 
+  if(riid == IID_ID3D9WrappedResource)
+  {
+    *ppvObj = &m_WrappedInfo;
+    return S_OK;
+  }
   if(riid == __uuidof(IUnknown))
   {
     *ppvObj = (IUnknown *)(IDirect3DQuery9 *)this;
@@ -198,9 +204,9 @@ bool WrappedIDirect3DDevice9::Serialise_QueryIssue(SerialiserType &ser, IDirect3
       IUnknown *res = GetResourceManager()->GetResource(id);
       if(res)
       {
-        WrappedIDirect3DQuery9 *wrappedQuery = dynamic_cast<WrappedIDirect3DQuery9 *>(res);
-        if(wrappedQuery)
-          wrappedQuery->GetReal()->Issue(dwIssueFlags);
+        D3D9WrappedInfo *info = GetD3D9WrappedInfo(res);
+        if(info)
+          ((IDirect3DQuery9 *)info->realObject)->Issue(dwIssueFlags);
       }
     }
   }
