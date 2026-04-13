@@ -1558,7 +1558,7 @@ void D3D9PipelineStateViewer::exportHTML(QXmlStreamWriter &xml, const D3D9Pipe::
       {
         const D3D9Pipe::VertexBuffer &vb = pipe.inputAssembly.vertexBuffers[i];
         rows.push_back(
-            {i, (qulonglong)vb.resourceId.IsValid(), vb.byteStride, vb.byteOffset});
+            {i, (vb.resourceId != ResourceId()) ? ToQStr(vb.resourceId) : QString(), vb.byteStride, vb.byteOffset});
       }
 
       m_Common.exportHTMLTable(xml, cols, rows);

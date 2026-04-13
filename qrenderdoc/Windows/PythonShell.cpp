@@ -544,6 +544,10 @@ struct CaptureContextInvoker : ObjectForwarder<ICaptureContext>
   virtual void MarkMessagesRead() override { return m_Obj.MarkMessagesRead(); }
   virtual rdcstr GetNotes(const rdcstr &key) override { return m_Obj.GetNotes(key); }
   virtual rdcarray<EventBookmark> GetBookmarks() override { return m_Obj.GetBookmarks(); }
+  virtual const D3D9Pipe::State *CurD3D9PipelineState() override
+  {
+    return m_Obj.CurD3D9PipelineState();
+  }
   virtual const D3D11Pipe::State *CurD3D11PipelineState() override
   {
     return m_Obj.CurD3D11PipelineState();
