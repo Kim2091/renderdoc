@@ -243,19 +243,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DSurface9::UnlockRect()
 {
   if(m_Lock.active && IsCaptureMode(m_pDevice->GetState()))
   {
-    D3DSURFACE_DESC desc;
-    m_pReal->GetDesc(&desc);
-
-    UINT width = (UINT)(m_Lock.rect.right - m_Lock.rect.left);
-    UINT height = (UINT)(m_Lock.rect.bottom - m_Lock.rect.top);
-
-    uint32_t dataSize = GetD3D9SurfaceByteSize(desc.Format, width, height);
-
-    // Mark the resource as dirty so initial state will be re-captured
     m_pDevice->GetResourceManager()->MarkDirtyResource(m_ID);
-
-    RDCDEBUG("Surface UnlockRect: captured %u bytes of data (fmt=%u, %ux%u)", dataSize,
-             (uint32_t)desc.Format, width, height);
   }
 
   m_Lock.active = false;
@@ -708,18 +696,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DTexture9::UnlockRect(UINT Level)
 {
   if(m_Lock.active && m_Lock.level == Level && IsCaptureMode(m_pDevice->GetState()))
   {
-    D3DSURFACE_DESC desc;
-    m_pReal->GetLevelDesc(Level, &desc);
-
-    UINT width = (UINT)(m_Lock.rect.right - m_Lock.rect.left);
-    UINT height = (UINT)(m_Lock.rect.bottom - m_Lock.rect.top);
-
-    uint32_t dataSize = GetD3D9SurfaceByteSize(desc.Format, width, height);
-
     m_pDevice->GetResourceManager()->MarkDirtyResource(m_ID);
-
-    RDCDEBUG("Texture UnlockRect level %u: captured %u bytes (fmt=%u, %ux%u)", Level, dataSize,
-             (uint32_t)desc.Format, width, height);
   }
 
   if(m_Lock.active && m_Lock.level == Level)
@@ -996,18 +973,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DCubeTexture9::UnlockRect(D3DCUBEMAP_FA
   if(m_Lock.active && m_Lock.face == FaceType && m_Lock.level == Level &&
      IsCaptureMode(m_pDevice->GetState()))
   {
-    D3DSURFACE_DESC desc;
-    m_pReal->GetLevelDesc(Level, &desc);
-
-    UINT width = (UINT)(m_Lock.rect.right - m_Lock.rect.left);
-    UINT height = (UINT)(m_Lock.rect.bottom - m_Lock.rect.top);
-
-    uint32_t dataSize = GetD3D9SurfaceByteSize(desc.Format, width, height);
-
     m_pDevice->GetResourceManager()->MarkDirtyResource(m_ID);
-
-    RDCDEBUG("CubeTexture UnlockRect face %d level %u: captured %u bytes (fmt=%u, %ux%u)",
-             (int)FaceType, Level, dataSize, (uint32_t)desc.Format, width, height);
   }
 
   if(m_Lock.active && m_Lock.face == FaceType && m_Lock.level == Level)
@@ -1332,13 +1298,22 @@ bool WrappedIDirect3DDevice9::Serialise_CreateTexture(SerialiserType &ser, UINT 
   if(IsReplayingAndReading())
   {
     IDirect3DTexture9 *real = NULL;
-    // Force MANAGED pool to DEFAULT on replay if needed, or use systemmem
     D3DPOOL replayPool = Pool;
-    if(Pool == D3DPOOL_MANAGED)
-      replayPool = D3DPOOL_MANAGED;
+    DWORD replayUsage = Usage;
 
-    HRESULT hr = m_pDevice->CreateTexture(Width, Height, Levels, Usage, Format, replayPool, &real,
-                                          NULL);
+    // During replay, override D3DPOOL_DEFAULT to D3DPOOL_MANAGED for non-RT/DS textures
+    // so they can be locked for CPU readback. D3DPOOL_MANAGED maintains a system memory
+    // copy that D3D9 automatically syncs, making textures lockable.
+    if(Pool == D3DPOOL_DEFAULT &&
+       !(Usage & (D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL)))
+    {
+      replayPool = D3DPOOL_MANAGED;
+      // D3DPOOL_MANAGED doesn't support D3DUSAGE_DYNAMIC
+      replayUsage &= ~D3DUSAGE_DYNAMIC;
+    }
+
+    HRESULT hr = m_pDevice->CreateTexture(Width, Height, Levels, replayUsage, Format, replayPool,
+                                          &real, NULL);
 
     if(FAILED(hr))
     {
@@ -1380,8 +1355,19 @@ bool WrappedIDirect3DDevice9::Serialise_CreateCubeTexture(SerialiserType &ser, U
   if(IsReplayingAndReading())
   {
     IDirect3DCubeTexture9 *real = NULL;
+    D3DPOOL replayPool = Pool;
+    DWORD replayUsage = Usage;
+
+    // During replay, override D3DPOOL_DEFAULT to D3DPOOL_MANAGED for non-RT/DS textures
+    if(Pool == D3DPOOL_DEFAULT &&
+       !(Usage & (D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL)))
+    {
+      replayPool = D3DPOOL_MANAGED;
+      replayUsage &= ~D3DUSAGE_DYNAMIC;
+    }
+
     HRESULT hr =
-        m_pDevice->CreateCubeTexture(EdgeLength, Levels, Usage, Format, Pool, &real, NULL);
+        m_pDevice->CreateCubeTexture(EdgeLength, Levels, replayUsage, Format, replayPool, &real, NULL);
 
     if(FAILED(hr))
     {
@@ -1424,8 +1410,19 @@ bool WrappedIDirect3DDevice9::Serialise_CreateVolumeTexture(
   if(IsReplayingAndReading())
   {
     IDirect3DVolumeTexture9 *real = NULL;
-    HRESULT hr = m_pDevice->CreateVolumeTexture(Width, Height, Depth, Levels, Usage, Format, Pool,
-                                                &real, NULL);
+    D3DPOOL replayPool = Pool;
+    DWORD replayUsage = Usage;
+
+    // During replay, override D3DPOOL_DEFAULT to D3DPOOL_MANAGED for non-RT/DS textures
+    if(Pool == D3DPOOL_DEFAULT &&
+       !(Usage & (D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL)))
+    {
+      replayPool = D3DPOOL_MANAGED;
+      replayUsage &= ~D3DUSAGE_DYNAMIC;
+    }
+
+    HRESULT hr = m_pDevice->CreateVolumeTexture(Width, Height, Depth, Levels, replayUsage, Format,
+                                                replayPool, &real, NULL);
 
     if(FAILED(hr))
     {
