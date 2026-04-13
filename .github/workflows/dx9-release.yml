@@ -31,20 +31,54 @@ jobs:
         7z x qrenderdoc_3rdparty.zip
         rm -f qrenderdoc_3rdparty.zip
 
+    - name: Cache plugins
+      id: cache-plugins
+      uses: actions/cache@v4
+      with:
+        path: |
+          plugins-win64
+          plugins-win32
+        key: renderdoc-plugins-v1
+
+    - name: Download plugins
+      if: steps.cache-plugins.outputs.cache-hit != 'true'
+      run: |
+        curl -O https://renderdoc.org/plugins.zip
+        7z x plugins.zip
+        rm -f plugins.zip
+
     - name: Cache build objects
       uses: actions/cache@v4
       with:
-        path: x64/Release/obj
-        key: msbuild-release-x64-${{ hashFiles('renderdoc/**/*.cpp', 'renderdoc/**/*.h', 'qrenderdoc/**/*.cpp', 'qrenderdoc/**/*.h') }}
+        path: |
+          x64/Release/obj
+          Win32/Release/obj
+        key: msbuild-release-${{ hashFiles('renderdoc/**/*.cpp', 'renderdoc/**/*.h', 'qrenderdoc/**/*.cpp', 'qrenderdoc/**/*.h') }}
         restore-keys: |
-          msbuild-release-x64-
+          msbuild-release-
 
     - name: Set up Visual Studio tools
       uses: microsoft/setup-msbuild@v2
 
-    - name: Build solution
+    - name: Set up Python and Sphinx
+      run: |
+        pip install Sphinx
+
+    - name: Build x64 Release
       run: msbuild.exe renderdoc.sln "/m" "/p:Configuration=Release" "/p:Platform=x64" "/p:PlatformToolset=v143"
       shell: powershell
+
+    - name: Build x86 Release
+      run: msbuild.exe renderdoc.sln "/m" "/p:Configuration=Release" "/p:Platform=x86" "/p:PlatformToolset=v143"
+      shell: powershell
+
+    - name: Build documentation (CHM)
+      run: |
+        cd docs
+        bash make.sh htmlhelp || true
+        if [ -f ../Documentation/htmlhelp/renderdoc.chm ]; then
+          cp ../Documentation/htmlhelp/renderdoc.chm ../x64/Release/
+        fi
 
     - name: Package
       run: |
@@ -103,8 +137,22 @@ jobs:
         cp qrenderdoc/3rdparty/qt/x64/bin/libcrypto-1_1-x64.dll $PKG/
         cp qrenderdoc/3rdparty/qt/x64/bin/libssl-1_1-x64.dll    $PKG/
 
-        # --- AMD/SPIR-V/Android plugins (optional, only if present) ---
-        cp -r x64/Release/plugins            $PKG/plugins 2>/dev/null || true
+        # --- Plugins (downloaded pre-built binaries) ---
+        mkdir -p $PKG/plugins
+        cp -r plugins-win64/* $PKG/plugins/ 2>/dev/null || true
+        mkdir -p $PKG/plugins/android
+        cp plugins-android/* $PKG/plugins/android/ 2>/dev/null || true
+
+        # --- x86 subfolder (from Win32 build) ---
+        mkdir -p $PKG/x86
+        cp Win32/Release/renderdoc.dll       $PKG/x86/
+        cp Win32/Release/renderdoc.json      $PKG/x86/
+        cp Win32/Release/renderdoccmd.exe    $PKG/x86/
+        cp Win32/Release/renderdocshim32.dll $PKG/x86/
+        cp Win32/Release/d3dcompiler_47.dll  $PKG/x86/
+        cp Win32/Release/dbghelp.dll         $PKG/x86/
+        cp Win32/Release/symsrv.dll          $PKG/x86/
+        cp Win32/Release/symsrv.yes          $PKG/x86/
 
         cd package && 7z a -tzip ../RenderDoc_DX9_Windows_x64.zip RenderDoc_DX9/
 
