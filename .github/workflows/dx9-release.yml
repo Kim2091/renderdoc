@@ -1,0 +1,84 @@
+name: DX9 Release Build
+
+on:
+  push:
+    branches: [dx9]
+    tags: ['dx9-*']
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - configuration: Development
+            toolset: v143
+          - configuration: Release
+            toolset: v143
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 5
+
+    - name: Download optional 3rdparty extras
+      run: |
+        curl https://renderdoc.org/qrenderdoc_3rdparty.zip -O
+        7z x qrenderdoc_3rdparty.zip
+
+    - name: Set up Visual Studio tools
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Build solution
+      run: msbuild.exe renderdoc.sln "/m" "/p:Configuration=${{ matrix.configuration }}" "/p:Platform=x64" "/p:PlatformToolset=${{ matrix.toolset }}"
+      shell: powershell
+
+    - name: Package artifacts
+      if: matrix.configuration == 'Release'
+      run: |
+        mkdir -p package
+        cp x64/Release/renderdoc.dll package/
+        cp x64/Release/renderdoc.json package/
+        cp x64/Release/renderdoccmd.exe package/
+        cp x64/Release/qrenderdoc.exe package/
+        cp x64/Release/renderdocshim64.dll package/
+        cp x64/Release/renderdoc_app.h package/
+        cp x64/Release/d3dcompiler_47.dll package/
+        cp x64/Release/dbghelp.dll package/
+        cp x64/Release/Qt5*.dll package/
+        cp x64/Release/_ctypes.pyd package/
+        mkdir -p package/pymodules
+        cp x64/Release/pymodules/*.pyd package/pymodules/
+        # Copy plugins if they exist
+        cp -r x64/Release/plugins package/plugins 2>/dev/null || true
+        cp -r x64/Release/qtplugins package/qtplugins 2>/dev/null || true
+
+    - name: Upload Release artifacts
+      if: matrix.configuration == 'Release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: RenderDoc_DX9_Windows_x64
+        path: package/
+
+    - name: Upload Development artifacts
+      if: matrix.configuration == 'Development'
+      uses: actions/upload-artifact@v4
+      with:
+        name: RenderDoc_DX9_Windows_x64_Dev
+        path: |
+          x64/Development/renderdoc.dll
+          x64/Development/renderdoc.json
+          x64/Development/renderdoccmd.exe
+          x64/Development/qrenderdoc.exe
+          x64/Development/renderdocshim64.dll
+          x64/Development/d3dcompiler_47.dll
+          x64/Development/dbghelp.dll
+          x64/Development/Qt5*.dll
+          x64/Development/_ctypes.pyd
+          x64/Development/pymodules/
