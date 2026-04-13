@@ -143,6 +143,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DSwapChain9::Present(CONST RECT *pSourc
     m_pDevice->SetLastCapturedFrameNumber(m_pDevice->GetFrameCounter());
   }
 
+  m_pDevice->RenderOverlayText();
+
   return m_pReal->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);
 }
 

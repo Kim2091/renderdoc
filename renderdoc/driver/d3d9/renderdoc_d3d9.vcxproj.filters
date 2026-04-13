@@ -81,6 +81,9 @@
     <ClCompile Include="d3d9_debug.cpp">
       <Filter>Replay</Filter>
     </ClCompile>
+    <ClCompile Include="d3d9_rendertext.cpp">
+      <Filter>Replay</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="precompiled.h">
@@ -126,6 +129,9 @@
       <Filter>Replay</Filter>
     </ClInclude>
     <ClInclude Include="d3d9_debug.h">
+      <Filter>Replay</Filter>
+    </ClInclude>
+    <ClInclude Include="d3d9_rendertext.h">
       <Filter>Replay</Filter>
     </ClInclude>
   </ItemGroup>

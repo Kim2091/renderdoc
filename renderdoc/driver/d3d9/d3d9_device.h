@@ -37,6 +37,7 @@
 // Forward declarations
 class WrappedIDirect3D9;
 class D3D9Replay;
+class D3D9TextRenderer;
 
 struct D3D9InitParams
 {
@@ -100,6 +101,8 @@ private:
   // Saved frame data for ReplayLog
   StreamReader *m_FrameReader;
 
+  D3D9TextRenderer *m_TextRenderer;
+
 public:
   WrappedIDirect3DDevice9(IDirect3DDevice9 *real, WrappedIDirect3D9 *d3d9,
                           D3DPRESENT_PARAMETERS *pPresentationParameters);
@@ -128,9 +131,13 @@ public:
 
   D3D9Replay *GetReplay() { return m_Replay; }
 
+  D3D9TextRenderer *GetTextRenderer() { return m_TextRenderer; }
+
   void IncrementFrameCounter() { m_FrameCounter++; }
   uint32_t GetFrameCounter() const { return m_FrameCounter; }
   void SetLastCapturedFrameNumber(uint32_t num) { m_CapturedFrames.back().frameNumber = num; }
+
+  void RenderOverlayText();
 
   // SwapChain Present serialization (called from WrappedIDirect3DSwapChain9)
   template <typename SerialiserType>

@@ -25,6 +25,7 @@
 #include "d3d9_device.h"
 #include "core/core.h"
 #include "d3d9_buffers.h"
+#include "d3d9_rendertext.h"
 #include "d3d9_query.h"
 #include "d3d9_replay.h"
 #include "d3d9_resources.h"
@@ -50,6 +51,7 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real, Wrapped
   m_Replay = NULL;
   m_DeviceRecord = NULL;
   m_FrameReader = NULL;
+  m_TextRenderer = NULL;
 
   m_CurEventID = 0;
   m_CurActionID = 0;
@@ -122,6 +124,7 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real,
   m_StateBlockRecording = false;
   m_DeviceRecord = NULL;
   m_FrameReader = NULL;
+  m_TextRenderer = NULL;
 
   m_CurEventID = 0;
   m_CurActionID = 0;
@@ -157,6 +160,8 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real,
 ///////////////////////////////////////////////////////////////////////////
 WrappedIDirect3DDevice9::~WrappedIDirect3DDevice9()
 {
+  SAFE_DELETE(m_TextRenderer);
+
   RenderDoc::Inst().RemoveDeviceFrameCapturer((IDirect3DDevice9 *)this);
 
   if(m_InitParams.PresentationParameters.hDeviceWindow)
@@ -750,6 +755,37 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Reset(
   return ret;
 }
 
+void WrappedIDirect3DDevice9::RenderOverlayText()
+{
+  if(!IsBackgroundCapturing(m_State))
+    return;
+
+  uint32_t overlay = RenderDoc::Inst().GetOverlayBits();
+
+  if(!(overlay & eRENDERDOC_Overlay_Enabled))
+    return;
+
+  // Lazy-init the text renderer on first use
+  if(!m_TextRenderer)
+    m_TextRenderer = new D3D9TextRenderer(m_pDevice);
+
+  // Get backbuffer dimensions
+  IDirect3DSurface9 *backbuffer = NULL;
+  if(SUCCEEDED(m_pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backbuffer)))
+  {
+    D3DSURFACE_DESC desc;
+    if(SUCCEEDED(backbuffer->GetDesc(&desc)))
+      m_TextRenderer->SetOutputDimensions(desc.Width, desc.Height);
+
+    backbuffer->Release();
+  }
+
+  DeviceOwnedWindow devWnd((void *)this, NULL);
+  rdcstr overlayText = RenderDoc::Inst().GetOverlayText(RDCDriver::D3D9, devWnd, m_FrameCounter, 0);
+
+  m_TextRenderer->RenderText(0.0f, 0.0f, overlayText);
+}
+
 HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Present(CONST RECT *pSourceRect,
                                                             CONST RECT *pDestRect,
                                                             HWND hDestWindowOverride,
@@ -782,6 +818,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Present(CONST RECT *pSourceRe
 
     m_CapturedFrames.back().frameNumber = m_FrameCounter;
   }
+
+  RenderOverlayText();
 
   return m_pDevice->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
 }

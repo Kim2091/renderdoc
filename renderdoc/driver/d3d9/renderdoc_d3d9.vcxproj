@@ -120,6 +120,7 @@
     <ClCompile Include="d3d9_initstate.cpp" />
     <ClCompile Include="d3d9_overlay.cpp" />
     <ClCompile Include="d3d9_debug.cpp" />
+    <ClCompile Include="d3d9_rendertext.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="precompiled.h" />
@@ -137,6 +138,7 @@
     <ClInclude Include="d3d9_query.h" />
     <ClInclude Include="d3d9_replay.h" />
     <ClInclude Include="d3d9_debug.h" />
+    <ClInclude Include="d3d9_rendertext.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
