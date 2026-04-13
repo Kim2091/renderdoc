@@ -21,9 +21,7 @@ jobs:
       id: cache-3rdparty
       uses: actions/cache@v4
       with:
-        path: |
-          3rdparty
-          PySide2
+        path: qrenderdoc/3rdparty
         key: renderdoc-3rdparty-v1
 
     - name: Download optional 3rdparty extras
@@ -50,26 +48,64 @@ jobs:
 
     - name: Package
       run: |
-        mkdir -p package/RenderDoc_DX9
-        cp x64/Release/renderdoc.dll package/RenderDoc_DX9/
-        cp x64/Release/renderdoc.json package/RenderDoc_DX9/
-        cp x64/Release/renderdoccmd.exe package/RenderDoc_DX9/
-        cp x64/Release/qrenderdoc.exe package/RenderDoc_DX9/
-        cp x64/Release/renderdocshim64.dll package/RenderDoc_DX9/
-        cp x64/Release/renderdoc_app.h package/RenderDoc_DX9/
-        cp x64/Release/d3dcompiler_47.dll package/RenderDoc_DX9/
-        cp x64/Release/dbghelp.dll package/RenderDoc_DX9/
-        cp x64/Release/Qt5*.dll package/RenderDoc_DX9/
-        cp x64/Release/python36.dll package/RenderDoc_DX9/
-        cp x64/Release/python36.zip package/RenderDoc_DX9/
-        cp x64/Release/_ctypes.pyd package/RenderDoc_DX9/
-        mkdir -p package/RenderDoc_DX9/pymodules
-        cp x64/Release/pymodules/*.pyd package/RenderDoc_DX9/pymodules/
-        cp -r x64/Release/plugins package/RenderDoc_DX9/plugins 2>/dev/null || true
-        cp -r x64/Release/qtplugins package/RenderDoc_DX9/qtplugins 2>/dev/null || true
-        cp -r x64/Release/PySide2 package/RenderDoc_DX9/PySide2 2>/dev/null || true
-        cp x64/Release/libcrypto-1_1-x64.dll package/RenderDoc_DX9/ 2>/dev/null || true
-        cp x64/Release/libssl-1_1-x64.dll package/RenderDoc_DX9/ 2>/dev/null || true
+        PKG=package/RenderDoc_DX9
+        mkdir -p $PKG
+
+        # --- Core build outputs from x64/Release/ ---
+        cp x64/Release/renderdoc.dll         $PKG/
+        cp x64/Release/renderdoc.json        $PKG/
+        cp x64/Release/renderdoccmd.exe      $PKG/
+        cp x64/Release/qrenderdoc.exe        $PKG/
+        cp x64/Release/renderdocshim64.dll   $PKG/
+        cp x64/Release/renderdoc_app.h       $PKG/
+        cp x64/Release/renderdocui.exe       $PKG/
+
+        # --- System/debug DLLs ---
+        cp x64/Release/d3dcompiler_47.dll    $PKG/
+        cp x64/Release/dbghelp.dll           $PKG/
+        cp x64/Release/symsrv.dll            $PKG/
+        cp x64/Release/symsrv.yes            $PKG/
+
+        # --- Qt DLLs ---
+        cp x64/Release/Qt5*.dll              $PKG/
+
+        # --- Python runtime ---
+        cp x64/Release/python36.dll          $PKG/
+        cp x64/Release/python36.zip          $PKG/
+        cp x64/Release/_ctypes.pyd           $PKG/
+
+        # --- Python modules (.pyd at root, matching stock layout) ---
+        cp x64/Release/pymodules/renderdoc.pyd   $PKG/
+        cp x64/Release/pymodules/qrenderdoc.pyd  $PKG/
+
+        # --- Debug symbols and import libs ---
+        cp x64/Release/renderdoc.pdb         $PKG/
+        cp x64/Release/renderdoc.lib         $PKG/
+        cp x64/Release/renderdoc.exp         $PKG/
+        cp x64/Release/qrenderdoc.pdb        $PKG/
+        cp x64/Release/qrenderdoc.lib        $PKG/
+        cp x64/Release/qrenderdoc.exp        $PKG/
+
+        # --- Qt plugins ---
+        cp -r x64/Release/qtplugins          $PKG/qtplugins
+
+        # --- Help file (if built) ---
+        cp x64/Release/renderdoc.chm         $PKG/ 2>/dev/null || true
+
+        # --- License ---
+        cp LICENSE.md                        $PKG/
+
+        # --- PySide2 + shiboken2 from 3rdparty zip (x64 variant) ---
+        cp -r qrenderdoc/3rdparty/pyside/x64/PySide2  $PKG/PySide2
+        cp    qrenderdoc/3rdparty/pyside/x64/shiboken2.dll $PKG/
+
+        # --- SSL libs from 3rdparty zip ---
+        cp qrenderdoc/3rdparty/qt/x64/bin/libcrypto-1_1-x64.dll $PKG/
+        cp qrenderdoc/3rdparty/qt/x64/bin/libssl-1_1-x64.dll    $PKG/
+
+        # --- AMD/SPIR-V/Android plugins (optional, only if present) ---
+        cp -r x64/Release/plugins            $PKG/plugins 2>/dev/null || true
+
         cd package && 7z a -tzip ../RenderDoc_DX9_Windows_x64.zip RenderDoc_DX9/
 
     - name: Upload to release
