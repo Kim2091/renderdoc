@@ -1764,16 +1764,15 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
     D3DSURFACE_DESC desc;
     tex2d->GetLevelDesc(sub.mip, &desc);
 
-    // For non-lockable textures (render targets, D3DPOOL_DEFAULT), use GetRenderTargetData
     IDirect3DSurface9 *srcSurf = NULL;
     tex2d->GetSurfaceLevel(sub.mip, &srcSurf);
 
     if(srcSurf)
     {
-      // Unwrap the surface for passing to the real device
-      IDirect3DSurface9 *realSrcSurf = (IDirect3DSurface9 *)UnwrapD3D9Resource(srcSurf);
+      bool gotData = false;
 
-      // Create a lockable offscreen surface
+      // Strategy 1: For render targets, use GetRenderTargetData via staging surface
+      IDirect3DSurface9 *realSrcSurf = (IDirect3DSurface9 *)UnwrapD3D9Resource(srcSurf);
       IDirect3DSurface9 *staging = NULL;
       HRESULT hr = m_pDevice->GetReal()->CreateOffscreenPlainSurface(
           desc.Width, desc.Height, desc.Format, D3DPOOL_SYSTEMMEM, &staging, NULL);
@@ -1781,44 +1780,7 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
       if(SUCCEEDED(hr) && staging)
       {
         hr = m_pDevice->GetReal()->GetRenderTargetData(realSrcSurf, staging);
-        if(FAILED(hr))
-        {
-          // If GetRenderTargetData fails (e.g., not a render target), try StretchRect or lock
-          // directly
-          D3DLOCKED_RECT locked;
-          hr = srcSurf->LockRect(&locked, NULL, D3DLOCK_READONLY);
-          if(SUCCEEDED(hr))
-          {
-            uint32_t byteSize = GetD3D9SurfaceByteSize(desc.Format, desc.Width, desc.Height);
-            data.resize(byteSize);
 
-            uint32_t rowSize = GetD3D9FormatByteSize(desc.Format) * desc.Width;
-            if(IsD3D9FormatCompressed(desc.Format))
-            {
-              uint32_t blockSize = GetD3D9FormatBlockSize(desc.Format);
-              uint32_t widthInBlocks = RDCMAX(1U, (desc.Width + blockSize - 1) / blockSize);
-              uint32_t heightInBlocks = RDCMAX(1U, (desc.Height + blockSize - 1) / blockSize);
-              rowSize = widthInBlocks * GetD3D9FormatByteSize(desc.Format);
-              for(uint32_t row = 0; row < heightInBlocks; row++)
-                memcpy(data.data() + row * rowSize,
-                       (byte *)locked.pBits + row * locked.Pitch, rowSize);
-            }
-            else
-            {
-              for(uint32_t row = 0; row < desc.Height; row++)
-                memcpy(data.data() + row * rowSize,
-                       (byte *)locked.pBits + row * locked.Pitch, rowSize);
-            }
-
-            srcSurf->UnlockRect();
-            SAFE_RELEASE(staging);
-            SAFE_RELEASE(srcSurf);
-            tex2d->Release();
-            return;
-          }
-        }
-
-        // If GetRenderTargetData succeeded, lock the staging surface
         if(SUCCEEDED(hr))
         {
           D3DLOCKED_RECT locked;
@@ -1847,10 +1809,44 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
             }
 
             staging->UnlockRect();
+            gotData = true;
           }
         }
 
         SAFE_RELEASE(staging);
+      }
+
+      // Strategy 2: Direct LockRect (works for MANAGED pool textures and when
+      // CreateOffscreenPlainSurface fails for compressed formats)
+      if(!gotData)
+      {
+        D3DLOCKED_RECT locked;
+        hr = srcSurf->LockRect(&locked, NULL, D3DLOCK_READONLY);
+        if(SUCCEEDED(hr))
+        {
+          uint32_t byteSize = GetD3D9SurfaceByteSize(desc.Format, desc.Width, desc.Height);
+          data.resize(byteSize);
+
+          uint32_t rowSize = GetD3D9FormatByteSize(desc.Format) * desc.Width;
+          if(IsD3D9FormatCompressed(desc.Format))
+          {
+            uint32_t blockSize = GetD3D9FormatBlockSize(desc.Format);
+            uint32_t widthInBlocks = RDCMAX(1U, (desc.Width + blockSize - 1) / blockSize);
+            uint32_t heightInBlocks = RDCMAX(1U, (desc.Height + blockSize - 1) / blockSize);
+            rowSize = widthInBlocks * GetD3D9FormatByteSize(desc.Format);
+            for(uint32_t row = 0; row < heightInBlocks; row++)
+              memcpy(data.data() + row * rowSize,
+                     (byte *)locked.pBits + row * locked.Pitch, rowSize);
+          }
+          else
+          {
+            for(uint32_t row = 0; row < desc.Height; row++)
+              memcpy(data.data() + row * rowSize,
+                     (byte *)locked.pBits + row * locked.Pitch, rowSize);
+          }
+
+          srcSurf->UnlockRect();
+        }
       }
 
       SAFE_RELEASE(srcSurf);
@@ -1871,9 +1867,10 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
 
     if(srcSurf)
     {
-      // Unwrap the surface for passing to the real device
-      IDirect3DSurface9 *realSrcSurf = (IDirect3DSurface9 *)UnwrapD3D9Resource(srcSurf);
+      bool gotData = false;
 
+      // Strategy 1: For render targets, use GetRenderTargetData via staging surface
+      IDirect3DSurface9 *realSrcSurf = (IDirect3DSurface9 *)UnwrapD3D9Resource(srcSurf);
       IDirect3DSurface9 *staging = NULL;
       HRESULT hr = m_pDevice->GetReal()->CreateOffscreenPlainSurface(
           desc.Width, desc.Height, desc.Format, D3DPOOL_SYSTEMMEM, &staging, NULL);
@@ -1881,26 +1878,6 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
       if(SUCCEEDED(hr) && staging)
       {
         hr = m_pDevice->GetReal()->GetRenderTargetData(realSrcSurf, staging);
-        if(FAILED(hr))
-        {
-          D3DLOCKED_RECT locked;
-          hr = srcSurf->LockRect(&locked, NULL, D3DLOCK_READONLY);
-          if(SUCCEEDED(hr))
-          {
-            uint32_t byteSize = GetD3D9SurfaceByteSize(desc.Format, desc.Width, desc.Height);
-            data.resize(byteSize);
-            uint32_t rowSize = GetD3D9FormatByteSize(desc.Format) * desc.Width;
-            for(uint32_t row = 0; row < desc.Height; row++)
-              memcpy(data.data() + row * rowSize,
-                     (byte *)locked.pBits + row * locked.Pitch, rowSize);
-            srcSurf->UnlockRect();
-            SAFE_RELEASE(staging);
-            SAFE_RELEASE(srcSurf);
-            texCube->Release();
-            return;
-          }
-        }
-
         if(SUCCEEDED(hr))
         {
           D3DLOCKED_RECT locked;
@@ -1910,14 +1887,58 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
             uint32_t byteSize = GetD3D9SurfaceByteSize(desc.Format, desc.Width, desc.Height);
             data.resize(byteSize);
             uint32_t rowSize = GetD3D9FormatByteSize(desc.Format) * desc.Width;
+            if(IsD3D9FormatCompressed(desc.Format))
+            {
+              uint32_t blockSize = GetD3D9FormatBlockSize(desc.Format);
+              uint32_t widthInBlocks = RDCMAX(1U, (desc.Width + blockSize - 1) / blockSize);
+              uint32_t heightInBlocks = RDCMAX(1U, (desc.Height + blockSize - 1) / blockSize);
+              rowSize = widthInBlocks * GetD3D9FormatByteSize(desc.Format);
+              for(uint32_t row = 0; row < heightInBlocks; row++)
+                memcpy(data.data() + row * rowSize,
+                       (byte *)locked.pBits + row * locked.Pitch, rowSize);
+            }
+            else
+            {
+              for(uint32_t row = 0; row < desc.Height; row++)
+                memcpy(data.data() + row * rowSize,
+                       (byte *)locked.pBits + row * locked.Pitch, rowSize);
+            }
+            staging->UnlockRect();
+            gotData = true;
+          }
+        }
+        SAFE_RELEASE(staging);
+      }
+
+      // Strategy 2: Direct LockRect (works for MANAGED pool textures)
+      if(!gotData)
+      {
+        D3DLOCKED_RECT locked;
+        hr = srcSurf->LockRect(&locked, NULL, D3DLOCK_READONLY);
+        if(SUCCEEDED(hr))
+        {
+          uint32_t byteSize = GetD3D9SurfaceByteSize(desc.Format, desc.Width, desc.Height);
+          data.resize(byteSize);
+          uint32_t rowSize = GetD3D9FormatByteSize(desc.Format) * desc.Width;
+          if(IsD3D9FormatCompressed(desc.Format))
+          {
+            uint32_t blockSize = GetD3D9FormatBlockSize(desc.Format);
+            uint32_t widthInBlocks = RDCMAX(1U, (desc.Width + blockSize - 1) / blockSize);
+            uint32_t heightInBlocks = RDCMAX(1U, (desc.Height + blockSize - 1) / blockSize);
+            rowSize = widthInBlocks * GetD3D9FormatByteSize(desc.Format);
+            for(uint32_t row = 0; row < heightInBlocks; row++)
+              memcpy(data.data() + row * rowSize,
+                     (byte *)locked.pBits + row * locked.Pitch, rowSize);
+          }
+          else
+          {
             for(uint32_t row = 0; row < desc.Height; row++)
               memcpy(data.data() + row * rowSize,
                      (byte *)locked.pBits + row * locked.Pitch, rowSize);
-            staging->UnlockRect();
           }
+          srcSurf->UnlockRect();
+          gotData = true;
         }
-
-        SAFE_RELEASE(staging);
       }
 
       SAFE_RELEASE(srcSurf);
@@ -1960,9 +1981,10 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
     D3DSURFACE_DESC desc;
     surf->GetDesc(&desc);
 
-    // Unwrap the surface for passing to the real device
-    IDirect3DSurface9 *realSurf = (IDirect3DSurface9 *)UnwrapD3D9Resource(surf);
+    bool gotData = false;
 
+    // Strategy 1: For render targets, use GetRenderTargetData via staging surface
+    IDirect3DSurface9 *realSurf = (IDirect3DSurface9 *)UnwrapD3D9Resource(surf);
     IDirect3DSurface9 *staging = NULL;
     HRESULT hr = m_pDevice->GetReal()->CreateOffscreenPlainSurface(
         desc.Width, desc.Height, desc.Format, D3DPOOL_SYSTEMMEM, &staging, NULL);
@@ -1970,25 +1992,6 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
     if(SUCCEEDED(hr) && staging)
     {
       hr = m_pDevice->GetReal()->GetRenderTargetData(realSurf, staging);
-      if(FAILED(hr))
-      {
-        D3DLOCKED_RECT locked;
-        hr = surf->LockRect(&locked, NULL, D3DLOCK_READONLY);
-        if(SUCCEEDED(hr))
-        {
-          uint32_t byteSize = GetD3D9SurfaceByteSize(desc.Format, desc.Width, desc.Height);
-          data.resize(byteSize);
-          uint32_t rowSize = GetD3D9FormatByteSize(desc.Format) * desc.Width;
-          for(uint32_t row = 0; row < desc.Height; row++)
-            memcpy(data.data() + row * rowSize,
-                   (byte *)locked.pBits + row * locked.Pitch, rowSize);
-          surf->UnlockRect();
-          SAFE_RELEASE(staging);
-          surf->Release();
-          return;
-        }
-      }
-
       if(SUCCEEDED(hr))
       {
         D3DLOCKED_RECT locked;
@@ -1998,14 +2001,58 @@ void D3D9Replay::GetTextureData(ResourceId tex, const Subresource &sub,
           uint32_t byteSize = GetD3D9SurfaceByteSize(desc.Format, desc.Width, desc.Height);
           data.resize(byteSize);
           uint32_t rowSize = GetD3D9FormatByteSize(desc.Format) * desc.Width;
+          if(IsD3D9FormatCompressed(desc.Format))
+          {
+            uint32_t blockSize = GetD3D9FormatBlockSize(desc.Format);
+            uint32_t widthInBlocks = RDCMAX(1U, (desc.Width + blockSize - 1) / blockSize);
+            uint32_t heightInBlocks = RDCMAX(1U, (desc.Height + blockSize - 1) / blockSize);
+            rowSize = widthInBlocks * GetD3D9FormatByteSize(desc.Format);
+            for(uint32_t row = 0; row < heightInBlocks; row++)
+              memcpy(data.data() + row * rowSize,
+                     (byte *)locked.pBits + row * locked.Pitch, rowSize);
+          }
+          else
+          {
+            for(uint32_t row = 0; row < desc.Height; row++)
+              memcpy(data.data() + row * rowSize,
+                     (byte *)locked.pBits + row * locked.Pitch, rowSize);
+          }
+          staging->UnlockRect();
+          gotData = true;
+        }
+      }
+      SAFE_RELEASE(staging);
+    }
+
+    // Strategy 2: Direct LockRect fallback
+    if(!gotData)
+    {
+      D3DLOCKED_RECT locked;
+      hr = surf->LockRect(&locked, NULL, D3DLOCK_READONLY);
+      if(SUCCEEDED(hr))
+      {
+        uint32_t byteSize = GetD3D9SurfaceByteSize(desc.Format, desc.Width, desc.Height);
+        data.resize(byteSize);
+        uint32_t rowSize = GetD3D9FormatByteSize(desc.Format) * desc.Width;
+        if(IsD3D9FormatCompressed(desc.Format))
+        {
+          uint32_t blockSize = GetD3D9FormatBlockSize(desc.Format);
+          uint32_t widthInBlocks = RDCMAX(1U, (desc.Width + blockSize - 1) / blockSize);
+          uint32_t heightInBlocks = RDCMAX(1U, (desc.Height + blockSize - 1) / blockSize);
+          rowSize = widthInBlocks * GetD3D9FormatByteSize(desc.Format);
+          for(uint32_t row = 0; row < heightInBlocks; row++)
+            memcpy(data.data() + row * rowSize,
+                   (byte *)locked.pBits + row * locked.Pitch, rowSize);
+        }
+        else
+        {
           for(uint32_t row = 0; row < desc.Height; row++)
             memcpy(data.data() + row * rowSize,
                    (byte *)locked.pBits + row * locked.Pitch, rowSize);
-          staging->UnlockRect();
         }
+        surf->UnlockRect();
+        gotData = true;
       }
-
-      SAFE_RELEASE(staging);
     }
 
     surf->Release();

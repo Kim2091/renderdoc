@@ -455,10 +455,18 @@ bool WrappedIDirect3DDevice9::Serialise_CreateVertexBuffer(SerialiserType &ser, 
   {
     IDirect3DVertexBuffer9 *real = NULL;
     D3DPOOL replayPool = Pool;
-    if(Pool == D3DPOOL_MANAGED)
-      replayPool = D3DPOOL_MANAGED;
+    DWORD replayUsage = Usage;
 
-    HRESULT hr = m_pDevice->CreateVertexBuffer(Length, Usage, FVF, replayPool, &real, NULL);
+    // During replay, override D3DPOOL_DEFAULT to D3DPOOL_MANAGED so buffers can be
+    // locked for CPU readback (D3DPOOL_DEFAULT buffers cannot be locked)
+    if(Pool == D3DPOOL_DEFAULT)
+    {
+      replayPool = D3DPOOL_MANAGED;
+      // D3DPOOL_MANAGED doesn't support D3DUSAGE_DYNAMIC
+      replayUsage &= ~D3DUSAGE_DYNAMIC;
+    }
+
+    HRESULT hr = m_pDevice->CreateVertexBuffer(Length, replayUsage, FVF, replayPool, &real, NULL);
 
     if(FAILED(hr))
     {
@@ -499,10 +507,17 @@ bool WrappedIDirect3DDevice9::Serialise_CreateIndexBuffer(SerialiserType &ser, U
   {
     IDirect3DIndexBuffer9 *real = NULL;
     D3DPOOL replayPool = Pool;
-    if(Pool == D3DPOOL_MANAGED)
-      replayPool = D3DPOOL_MANAGED;
+    DWORD replayUsage = Usage;
 
-    HRESULT hr = m_pDevice->CreateIndexBuffer(Length, Usage, Format, replayPool, &real, NULL);
+    // During replay, override D3DPOOL_DEFAULT to D3DPOOL_MANAGED so buffers can be
+    // locked for CPU readback (D3DPOOL_DEFAULT buffers cannot be locked)
+    if(Pool == D3DPOOL_DEFAULT)
+    {
+      replayPool = D3DPOOL_MANAGED;
+      replayUsage &= ~D3DUSAGE_DYNAMIC;
+    }
+
+    HRESULT hr = m_pDevice->CreateIndexBuffer(Length, replayUsage, Format, replayPool, &real, NULL);
 
     if(FAILED(hr))
     {
