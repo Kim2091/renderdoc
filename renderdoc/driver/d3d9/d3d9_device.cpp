@@ -35,6 +35,9 @@
 #include "serialise/rdcfile.h"
 #include "strings/string_utils.h"
 
+// Static device pointer for D3DPERF routing
+WrappedIDirect3DDevice9 *WrappedIDirect3DDevice9::s_D3D9Device = NULL;
+
 ///////////////////////////////////////////////////////////////////////////
 // Constructor (capture mode)
 ///////////////////////////////////////////////////////////////////////////
@@ -111,6 +114,8 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real, Wrapped
     }
 
     RDCLOG("Created D3D9 device.");
+
+    s_D3D9Device = this;
   }
 }
 
@@ -165,6 +170,9 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real,
 ///////////////////////////////////////////////////////////////////////////
 WrappedIDirect3DDevice9::~WrappedIDirect3DDevice9()
 {
+  if(s_D3D9Device == this)
+    s_D3D9Device = NULL;
+
   SAFE_DELETE(m_TextRenderer);
 
   RenderDoc::Inst().RemoveDeviceFrameCapturer((IDirect3DDevice9 *)this);
@@ -630,20 +638,214 @@ template bool WrappedIDirect3DDevice9::Serialise_CaptureScope(WriteSerialiser &s
 ///////////////////////////////////////////////////////////////////////////
 void WrappedIDirect3DDevice9::SetMarker(uint32_t col, const wchar_t *name)
 {
-  // TODO: connect to event/annotation tracking
+  if(!s_D3D9Device)
+    return;
+
+  Annotation annot;
+  annot.m_Type = Annotation::ANNOT_SETMARKER;
+  annot.m_Col = col;
+  annot.m_Name = StringFormat::Wide2UTF8(name ? name : L"");
+
+  {
+    SCOPED_LOCK(s_D3D9Device->m_AnnotLock);
+    s_D3D9Device->m_AnnotationQueue.push_back(annot);
+  }
 }
 
 int WrappedIDirect3DDevice9::BeginEvent(uint32_t col, const wchar_t *name)
 {
-  // TODO: connect to event/annotation tracking
-  return 0;
+  if(!s_D3D9Device)
+    return 0;
+
+  Annotation annot;
+  annot.m_Type = Annotation::ANNOT_BEGINEVENT;
+  annot.m_Col = col;
+  annot.m_Name = StringFormat::Wide2UTF8(name ? name : L"");
+
+  {
+    SCOPED_LOCK(s_D3D9Device->m_AnnotLock);
+    s_D3D9Device->m_AnnotationQueue.push_back(annot);
+  }
+
+  return s_D3D9Device->m_MarkerIndentLevel;
 }
 
 int WrappedIDirect3DDevice9::EndEvent()
 {
-  // TODO: connect to event/annotation tracking
-  return 0;
+  if(!s_D3D9Device)
+    return 0;
+
+  Annotation annot;
+  annot.m_Type = Annotation::ANNOT_ENDEVENT;
+  annot.m_Col = 0;
+
+  {
+    SCOPED_LOCK(s_D3D9Device->m_AnnotLock);
+    s_D3D9Device->m_AnnotationQueue.push_back(annot);
+  }
+
+  return --s_D3D9Device->m_MarkerIndentLevel;
 }
+
+///////////////////////////////////////////////////////////////////////////
+// Annotation drain and serialization
+///////////////////////////////////////////////////////////////////////////
+void WrappedIDirect3DDevice9::DrainAnnotationQueue()
+{
+  if(!IsActiveCapturing(m_State))
+    return;
+
+  m_AnnotLock.Lock();
+
+  if(m_AnnotationQueue.empty())
+  {
+    m_AnnotLock.Unlock();
+    return;
+  }
+
+  rdcarray<Annotation> annotations;
+  annotations.swap(m_AnnotationQueue);
+
+  m_AnnotLock.Unlock();
+
+  for(size_t i = 0; i < annotations.size(); i++)
+  {
+    const Annotation &a = annotations[i];
+
+    switch(a.m_Type)
+    {
+      case Annotation::ANNOT_SETMARKER:
+      {
+        rdcwstr wide = StringFormat::UTF82Wide(a.m_Name);
+        USE_SCRATCH_SERIALISER();
+        GET_SERIALISER.SetActionChunk();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::SetMarker);
+        Serialise_SetMarker(ser, a.m_Col, wide.c_str());
+        m_DeviceRecord->AddChunk(scope.Get());
+        break;
+      }
+      case Annotation::ANNOT_BEGINEVENT:
+      {
+        rdcwstr wide = StringFormat::UTF82Wide(a.m_Name);
+        USE_SCRATCH_SERIALISER();
+        GET_SERIALISER.SetActionChunk();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::PushMarker);
+        Serialise_PushMarker(ser, a.m_Col, wide.c_str());
+        m_DeviceRecord->AddChunk(scope.Get());
+        break;
+      }
+      case Annotation::ANNOT_ENDEVENT:
+      {
+        USE_SCRATCH_SERIALISER();
+        GET_SERIALISER.SetActionChunk();
+        SCOPED_SERIALISE_CHUNK(D3D9Chunk::PopMarker);
+        Serialise_PopMarker(ser);
+        m_DeviceRecord->AddChunk(scope.Get());
+        break;
+      }
+    }
+  }
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_SetMarker(SerialiserType &ser, uint32_t Color,
+                                                    const wchar_t *MarkerNameW)
+{
+  SERIALISE_ELEMENT(Color);
+  SERIALISE_ELEMENT_LOCAL(MarkerName, StringFormat::Wide2UTF8(MarkerNameW ? MarkerNameW : L""));
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    if(IsLoading(m_State))
+    {
+      ActionDescription action;
+      action.customName = MarkerName;
+      action.flags |= ActionFlags::SetMarker;
+
+      byte alpha = (Color >> 24) & 0xff;
+      byte red = (Color >> 16) & 0xff;
+      byte green = (Color >> 8) & 0xff;
+      byte blue = (Color >> 0) & 0xff;
+
+      action.markerColor.x = float(red) / 255.0f;
+      action.markerColor.y = float(green) / 255.0f;
+      action.markerColor.z = float(blue) / 255.0f;
+      action.markerColor.w = float(alpha) / 255.0f;
+
+      AddEvent();
+      AddAction(action);
+    }
+  }
+
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_PushMarker(SerialiserType &ser, uint32_t Color,
+                                                     const wchar_t *MarkerNameW)
+{
+  SERIALISE_ELEMENT(Color);
+  SERIALISE_ELEMENT_LOCAL(MarkerName, StringFormat::Wide2UTF8(MarkerNameW ? MarkerNameW : L""));
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    if(IsLoading(m_State))
+    {
+      ActionDescription action;
+      action.customName = MarkerName;
+      action.flags |= ActionFlags::PushMarker;
+
+      byte alpha = (Color >> 24) & 0xff;
+      byte red = (Color >> 16) & 0xff;
+      byte green = (Color >> 8) & 0xff;
+      byte blue = (Color >> 0) & 0xff;
+
+      action.markerColor.x = float(red) / 255.0f;
+      action.markerColor.y = float(green) / 255.0f;
+      action.markerColor.z = float(blue) / 255.0f;
+      action.markerColor.w = float(alpha) / 255.0f;
+
+      AddEvent();
+      AddAction(action);
+
+      // Push onto the action stack so subsequent actions become children
+      if(!m_ActionStack.empty())
+        m_ActionStack.push_back(&m_ActionStack.back()->children.back());
+    }
+  }
+
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedIDirect3DDevice9::Serialise_PopMarker(SerialiserType &ser)
+{
+  if(IsReplayingAndReading())
+  {
+    if(IsLoading(m_State))
+    {
+      if(m_ActionStack.size() > 1)
+        m_ActionStack.pop_back();
+    }
+  }
+
+  return true;
+}
+
+template bool WrappedIDirect3DDevice9::Serialise_SetMarker(ReadSerialiser &ser, uint32_t Color,
+                                                             const wchar_t *MarkerNameW);
+template bool WrappedIDirect3DDevice9::Serialise_SetMarker(WriteSerialiser &ser, uint32_t Color,
+                                                             const wchar_t *MarkerNameW);
+template bool WrappedIDirect3DDevice9::Serialise_PushMarker(ReadSerialiser &ser, uint32_t Color,
+                                                              const wchar_t *MarkerNameW);
+template bool WrappedIDirect3DDevice9::Serialise_PushMarker(WriteSerialiser &ser, uint32_t Color,
+                                                              const wchar_t *MarkerNameW);
+template bool WrappedIDirect3DDevice9::Serialise_PopMarker(ReadSerialiser &ser);
+template bool WrappedIDirect3DDevice9::Serialise_PopMarker(WriteSerialiser &ser);
 
 ///////////////////////////////////////////////////////////////////////////
 // IDirect3DDevice9 — Lifecycle / status
@@ -800,6 +1002,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Present(CONST RECT *pSourceRe
 
   if(IsActiveCapturing(m_State))
   {
+    DrainAnnotationQueue();
+
     // Serialize Present as the last event
     {
       USE_SCRATCH_SERIALISER();
@@ -1645,6 +1849,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::Clear(DWORD Count, CONST D3DR
 
   if(IsActiveCapturing(m_State))
   {
+    DrainAnnotationQueue();
+
     USE_SCRATCH_SERIALISER();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::Clear);
     Serialise_Clear(ser, Count, pRects, Flags, Color, Z, Stencil);
@@ -2277,6 +2483,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DrawPrimitive(D3DPRIMITIVETYP
 
   if(IsActiveCapturing(m_State))
   {
+    DrainAnnotationQueue();
+
     USE_SCRATCH_SERIALISER();
     GET_SERIALISER.SetActionChunk();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::DrawPrimitive);
@@ -2297,6 +2505,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DrawIndexedPrimitive(
 
   if(IsActiveCapturing(m_State))
   {
+    DrainAnnotationQueue();
+
     USE_SCRATCH_SERIALISER();
     GET_SERIALISER.SetActionChunk();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::DrawIndexedPrimitive);
@@ -2318,6 +2528,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DrawPrimitiveUP(
 
   if(IsActiveCapturing(m_State))
   {
+    DrainAnnotationQueue();
+
     USE_SCRATCH_SERIALISER();
     GET_SERIALISER.SetActionChunk();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::DrawPrimitiveUP);
@@ -2340,6 +2552,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDirect3DDevice9::DrawIndexedPrimitiveUP(
 
   if(IsActiveCapturing(m_State))
   {
+    DrainAnnotationQueue();
+
     USE_SCRATCH_SERIALISER();
     GET_SERIALISER.SetActionChunk();
     SCOPED_SERIALISE_CHUNK(D3D9Chunk::DrawIndexedPrimitiveUP);
@@ -3239,6 +3453,11 @@ bool WrappedIDirect3DDevice9::ProcessChunk(ReadSerialiser &ser, D3D9Chunk chunk)
       return Serialise_CreateStateBlock(ser, D3DSBT_ALL, NULL);
     case D3D9Chunk::CreateQuery:
       return Serialise_CreateQuery(ser, D3DQUERYTYPE_EVENT, NULL);
+
+    // Annotations / markers
+    case D3D9Chunk::SetMarker: return Serialise_SetMarker(ser, 0, NULL);
+    case D3D9Chunk::PushMarker: return Serialise_PushMarker(ser, 0, NULL);
+    case D3D9Chunk::PopMarker: return Serialise_PopMarker(ser);
 
     // Draw calls
     case D3D9Chunk::DrawPrimitive:

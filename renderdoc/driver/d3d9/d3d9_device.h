@@ -205,7 +205,35 @@ public:
   void SetStateBlockRecording(bool recording) { m_StateBlockRecording = recording; }
 
   ////////////////////////////////////////////////////////////////
-  // D3DPERF static methods
+  // D3DPERF static methods and annotation support
+
+  struct Annotation
+  {
+    enum
+    {
+      ANNOT_SETMARKER,
+      ANNOT_BEGINEVENT,
+      ANNOT_ENDEVENT
+    } m_Type;
+    uint32_t m_Col;
+    rdcstr m_Name;
+  };
+
+  // Static device pointer for D3DPERF routing (D3D9 almost always has exactly one device)
+  static WrappedIDirect3DDevice9 *s_D3D9Device;
+
+  Threading::CriticalSection m_AnnotLock;
+  rdcarray<Annotation> m_AnnotationQueue;
+  int m_MarkerIndentLevel = 0;
+
+  void DrainAnnotationQueue();
+
+  template <typename SerialiserType>
+  bool Serialise_SetMarker(SerialiserType &ser, uint32_t Color, const wchar_t *MarkerNameW);
+  template <typename SerialiserType>
+  bool Serialise_PushMarker(SerialiserType &ser, uint32_t Color, const wchar_t *MarkerNameW);
+  template <typename SerialiserType>
+  bool Serialise_PopMarker(SerialiserType &ser);
 
   static void SetMarker(uint32_t col, const wchar_t *name);
   static int BeginEvent(uint32_t col, const wchar_t *name);

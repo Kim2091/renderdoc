@@ -137,6 +137,11 @@ enum class D3D9Chunk : uint32_t
   DrawRectPatch,
   DrawTriPatch,
 
+  // Annotations / markers (D3DPERF_*)
+  SetMarker,
+  PushMarker,
+  PopMarker,
+
   Max,
 };
 

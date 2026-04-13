@@ -61,7 +61,7 @@ rdcstr DoStringise(const D3D9ResourceType &el)
 template <>
 rdcstr DoStringise(const D3D9Chunk &el)
 {
-  RDCCOMPILE_ASSERT((uint32_t)D3D9Chunk::Max == 1082, "Chunks changed without updating names");
+  RDCCOMPILE_ASSERT((uint32_t)D3D9Chunk::Max == 1085, "Chunks changed without updating names");
 
   BEGIN_ENUM_STRINGISE(D3D9Chunk)
   {
@@ -184,6 +184,11 @@ rdcstr DoStringise(const D3D9Chunk &el)
     // N-patch
     STRINGISE_ENUM_CLASS_NAMED(DrawRectPatch, "IDirect3DDevice9::DrawRectPatch");
     STRINGISE_ENUM_CLASS_NAMED(DrawTriPatch, "IDirect3DDevice9::DrawTriPatch");
+
+    // Annotations / markers (D3DPERF_*)
+    STRINGISE_ENUM_CLASS_NAMED(SetMarker, "D3DPERF_SetMarker");
+    STRINGISE_ENUM_CLASS_NAMED(PushMarker, "D3DPERF_BeginEvent");
+    STRINGISE_ENUM_CLASS_NAMED(PopMarker, "D3DPERF_EndEvent");
   }
   END_ENUM_STRINGISE();
 }
