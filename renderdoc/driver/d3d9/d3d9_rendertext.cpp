@@ -148,6 +148,7 @@ void D3D9TextRenderer::RenderText(float x, float y, const rdcstr &text)
   m_pDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
   m_pDevice->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
   m_pDevice->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+  m_pDevice->SetRenderState(D3DRS_CLIPPING, FALSE);
   m_pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, 0);
 
   // Texture stage: modulate texture alpha with diffuse, use texture color
@@ -237,15 +238,21 @@ void D3D9TextRenderer::RenderTextInternal(float x, float y, const rdcstr &text)
     float u1 = bc.x1 * invTexW;
     float v1 = bc.y1 * invTexH;
 
+    // D3D9 half-pixel offset for correct texel-to-pixel mapping with XYZRHW
+    float x0 = glyphX - 0.5f;
+    float y0 = glyphY - 0.5f;
+    float x1 = glyphX + glyphW - 0.5f;
+    float y1 = glyphY + glyphH - 0.5f;
+
     // Triangle 1: top-left, top-right, bottom-left
-    verts[vertIdx + 0] = {glyphX, glyphY, 0.0f, 1.0f, textColor, u0, v0};
-    verts[vertIdx + 1] = {glyphX + glyphW, glyphY, 0.0f, 1.0f, textColor, u1, v0};
-    verts[vertIdx + 2] = {glyphX, glyphY + glyphH, 0.0f, 1.0f, textColor, u0, v1};
+    verts[vertIdx + 0] = {x0, y0, 0.0f, 1.0f, textColor, u0, v0};
+    verts[vertIdx + 1] = {x1, y0, 0.0f, 1.0f, textColor, u1, v0};
+    verts[vertIdx + 2] = {x0, y1, 0.0f, 1.0f, textColor, u0, v1};
 
     // Triangle 2: top-right, bottom-right, bottom-left
-    verts[vertIdx + 3] = {glyphX + glyphW, glyphY, 0.0f, 1.0f, textColor, u1, v0};
-    verts[vertIdx + 4] = {glyphX + glyphW, glyphY + glyphH, 0.0f, 1.0f, textColor, u1, v1};
-    verts[vertIdx + 5] = {glyphX, glyphY + glyphH, 0.0f, 1.0f, textColor, u0, v1};
+    verts[vertIdx + 3] = {x1, y0, 0.0f, 1.0f, textColor, u1, v0};
+    verts[vertIdx + 4] = {x1, y1, 0.0f, 1.0f, textColor, u1, v1};
+    verts[vertIdx + 5] = {x0, y1, 0.0f, 1.0f, textColor, u0, v1};
 
     curX += bc.xadvance;
     vertIdx += 6;

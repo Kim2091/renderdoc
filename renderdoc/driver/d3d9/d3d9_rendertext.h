@@ -33,20 +33,12 @@ public:
   D3D9TextRenderer(IDirect3DDevice9 *device);
   ~D3D9TextRenderer();
 
-  void SetOutputDimensions(int w, int h)
-  {
-    m_width = w;
-    m_height = h;
-  }
-
   void RenderText(float x, float y, const rdcstr &text);
 
 private:
   void RenderTextInternal(float x, float y, const rdcstr &text);
 
   IDirect3DDevice9 *m_pDevice = NULL;
-
-  int m_width = 1, m_height = 1;
 
   static const int FONT_TEX_WIDTH = 256;
   static const int FONT_TEX_HEIGHT = 128;

@@ -102,8 +102,13 @@ WrappedIDirect3DDevice9::WrappedIDirect3DDevice9(IDirect3DDevice9 *real, Wrapped
     RenderDoc::Inst().AddDeviceFrameCapturer((IDirect3DDevice9 *)this, this);
 
     if(pPresentationParameters && pPresentationParameters->hDeviceWindow)
+    {
       Keyboard::AddInputWindow(WindowingSystem::Win32,
                                (void *)pPresentationParameters->hDeviceWindow);
+
+      RenderDoc::Inst().AddFrameCapturer(
+          DeviceOwnedWindow((void *)this, (void *)pPresentationParameters->hDeviceWindow), this);
+    }
 
     RDCLOG("Created D3D9 device.");
   }
@@ -165,8 +170,13 @@ WrappedIDirect3DDevice9::~WrappedIDirect3DDevice9()
   RenderDoc::Inst().RemoveDeviceFrameCapturer((IDirect3DDevice9 *)this);
 
   if(m_InitParams.PresentationParameters.hDeviceWindow)
+  {
+    RenderDoc::Inst().RemoveFrameCapturer(
+        DeviceOwnedWindow((void *)this, (void *)m_InitParams.PresentationParameters.hDeviceWindow));
+
     Keyboard::RemoveInputWindow(WindowingSystem::Win32,
                                 (void *)m_InitParams.PresentationParameters.hDeviceWindow);
+  }
 
   SAFE_DELETE(m_StoredStructuredData);
 
@@ -769,18 +779,8 @@ void WrappedIDirect3DDevice9::RenderOverlayText()
   if(!m_TextRenderer)
     m_TextRenderer = new D3D9TextRenderer(m_pDevice);
 
-  // Get backbuffer dimensions
-  IDirect3DSurface9 *backbuffer = NULL;
-  if(SUCCEEDED(m_pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backbuffer)))
-  {
-    D3DSURFACE_DESC desc;
-    if(SUCCEEDED(backbuffer->GetDesc(&desc)))
-      m_TextRenderer->SetOutputDimensions(desc.Width, desc.Height);
-
-    backbuffer->Release();
-  }
-
-  DeviceOwnedWindow devWnd((void *)this, NULL);
+  DeviceOwnedWindow devWnd((void *)this,
+                           (void *)m_InitParams.PresentationParameters.hDeviceWindow);
   rdcstr overlayText = RenderDoc::Inst().GetOverlayText(RDCDriver::D3D9, devWnd, m_FrameCounter, 0);
 
   m_TextRenderer->RenderText(0.0f, 0.0f, overlayText);
