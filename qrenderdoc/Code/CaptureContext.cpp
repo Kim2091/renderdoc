@@ -79,6 +79,7 @@ CaptureContext::CaptureContext(PersistantConfig &cfg) : m_Config(cfg)
 
   memset(&m_APIProps, 0, sizeof(m_APIProps));
 
+  m_CurD3D9PipelineState = NULL;
   m_CurD3D11PipelineState = NULL;
   m_CurD3D12PipelineState = NULL;
   m_CurGLPipelineState = NULL;
@@ -1083,6 +1084,7 @@ void CaptureContext::LoadCaptureThreaded(const QString &captureFile, const Repla
 
     m_PostloadProgress = 0.9f;
 
+    m_CurD3D9PipelineState = r->GetD3D9PipelineState();
     m_CurD3D11PipelineState = r->GetD3D11PipelineState();
     m_CurD3D12PipelineState = r->GetD3D12PipelineState();
     m_CurGLPipelineState = r->GetGLPipelineState();
@@ -1452,6 +1454,7 @@ void CaptureContext::CloseCapture()
   m_Actions = &m_EmptyActions;
   m_FirstAction = m_LastAction = NULL;
 
+  m_CurD3D9PipelineState = NULL;
   m_CurD3D11PipelineState = NULL;
   m_CurD3D12PipelineState = NULL;
   m_CurGLPipelineState = NULL;
@@ -1621,6 +1624,7 @@ void CaptureContext::SetEventID(const rdcarray<ICaptureViewer *> &exclude, uint3
   // the UI to stall. We ideally want to have at least an interactive UI and a progress bar.
   m_Replay.AsyncInvoke(tag, [this, eventId, force, &done](IReplayController *r) {
     r->SetFrameEvent(eventId, force);
+    m_CurD3D9PipelineState = r->GetD3D9PipelineState();
     m_CurD3D11PipelineState = r->GetD3D11PipelineState();
     m_CurD3D12PipelineState = r->GetD3D12PipelineState();
     m_CurGLPipelineState = r->GetGLPipelineState();

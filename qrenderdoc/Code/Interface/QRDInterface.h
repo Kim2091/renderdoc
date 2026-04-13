@@ -2949,6 +2949,16 @@ currently docked.
   virtual void AddDockWindow(QWidget *newWindow, DockReference ref, QWidget *refWindow,
                              float percentage = 0.5f) = 0;
 
+  DOCUMENT(R"(Retrieve the current :class:`~renderdoc.D3D9State` pipeline state.
+
+The return value will be ``None`` if the capture is not using the D3D9 API.
+You should determine the API of the capture first before fetching it.
+
+:return: The current D3D9 pipeline state.
+:rtype: renderdoc.D3D9State
+)");
+  virtual const D3D9Pipe::State *CurD3D9PipelineState() = 0;
+
   DOCUMENT(R"(Retrieve the current :class:`~renderdoc.D3D11State` pipeline state.
 
 The return value will be ``None`` if the capture is not using the D3D11 API.

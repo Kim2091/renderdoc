@@ -295,6 +295,7 @@ public:
   void AddDockWindow(QWidget *newWindow, DockReference ref, QWidget *refWindow,
                      float percentage = 0.5f) override;
 
+  const D3D9Pipe::State *CurD3D9PipelineState() override { return m_CurD3D9PipelineState; }
   const D3D11Pipe::State *CurD3D11PipelineState() override { return m_CurD3D11PipelineState; }
   const D3D12Pipe::State *CurD3D12PipelineState() override { return m_CurD3D12PipelineState; }
   const GLPipe::State *CurGLPipelineState() override { return m_CurGLPipelineState; }
@@ -304,6 +305,7 @@ public:
 private:
   ReplayManager m_Replay;
 
+  const D3D9Pipe::State *m_CurD3D9PipelineState;
   const D3D11Pipe::State *m_CurD3D11PipelineState;
   const D3D12Pipe::State *m_CurD3D12PipelineState;
   const GLPipe::State *m_CurGLPipelineState;
