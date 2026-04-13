@@ -41,6 +41,8 @@ jobs:
         cp x64/Release/d3dcompiler_47.dll package/RenderDoc_DX9/
         cp x64/Release/dbghelp.dll package/RenderDoc_DX9/
         cp x64/Release/Qt5*.dll package/RenderDoc_DX9/
+        cp x64/Release/python36.dll package/RenderDoc_DX9/
+        cp x64/Release/python36.zip package/RenderDoc_DX9/
         cp x64/Release/_ctypes.pyd package/RenderDoc_DX9/
         mkdir -p package/RenderDoc_DX9/pymodules
         cp x64/Release/pymodules/*.pyd package/RenderDoc_DX9/pymodules/
