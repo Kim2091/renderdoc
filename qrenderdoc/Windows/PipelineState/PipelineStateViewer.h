@@ -43,6 +43,7 @@ class RDTreeWidgetItem;
 class RDTreeWidget;
 class CustomPaintWidget;
 
+class D3D9PipelineStateViewer;
 class D3D11PipelineStateViewer;
 class D3D12PipelineStateViewer;
 class GLPipelineStateViewer;
@@ -166,6 +167,7 @@ private:
 
   QPixmap m_TopoPixmaps[(int)Topology::PatchList + 1];
 
+  void setToD3D9();
   void setToD3D11();
   void setToD3D12();
   void setToGL();
@@ -174,6 +176,7 @@ private:
 
   QString GetCurrentAPI();
 
+  D3D9PipelineStateViewer *m_D3D9;
   D3D11PipelineStateViewer *m_D3D11;
   D3D12PipelineStateViewer *m_D3D12;
   GLPipelineStateViewer *m_GL;

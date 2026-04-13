@@ -218,6 +218,7 @@ SOURCES += Code/qrenderdoc.cpp \
     Windows/APIInspector.cpp \
     Windows/PipelineState/PipelineStateViewer.cpp \
     Windows/PipelineState/VulkanPipelineStateViewer.cpp \
+    Windows/PipelineState/D3D9PipelineStateViewer.cpp \
     Windows/PipelineState/D3D11PipelineStateViewer.cpp \
     Windows/PipelineState/D3D12PipelineStateViewer.cpp \
     Windows/PipelineState/GLPipelineStateViewer.cpp \
@@ -307,6 +308,7 @@ HEADERS += Code/CaptureContext.h \
     Windows/APIInspector.h \
     Windows/PipelineState/PipelineStateViewer.h \
     Windows/PipelineState/VulkanPipelineStateViewer.h \
+    Windows/PipelineState/D3D9PipelineStateViewer.h \
     Windows/PipelineState/D3D11PipelineStateViewer.h \
     Windows/PipelineState/D3D12PipelineStateViewer.h \
     Windows/PipelineState/GLPipelineStateViewer.h \
@@ -359,6 +361,7 @@ FORMS    += Windows/Dialogs/AboutDialog.ui \
     Windows/APIInspector.ui \
     Windows/PipelineState/PipelineStateViewer.ui \
     Windows/PipelineState/VulkanPipelineStateViewer.ui \
+    Windows/PipelineState/D3D9PipelineStateViewer.ui \
     Windows/PipelineState/D3D11PipelineStateViewer.ui \
     Windows/PipelineState/D3D12PipelineStateViewer.ui \
     Windows/PipelineState/GLPipelineStateViewer.ui \

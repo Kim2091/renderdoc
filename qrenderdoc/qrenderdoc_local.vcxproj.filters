@@ -171,6 +171,9 @@
     <ClCompile Include="Windows\APIInspector.cpp">
       <Filter>Windows</Filter>
     </ClCompile>
+    <ClCompile Include="Windows\PipelineState\D3D9PipelineStateViewer.cpp">
+      <Filter>Windows\PipelineState</Filter>
+    </ClCompile>
     <ClCompile Include="Windows\PipelineState\D3D11PipelineStateViewer.cpp">
       <Filter>Windows\PipelineState</Filter>
     </ClCompile>
@@ -421,6 +424,9 @@
       <Filter>Generated Files</Filter>
     </ClCompile>
     <ClCompile Include="$(IntDir)generated\moc_CustomPaintWidget.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="$(IntDir)generated\moc_D3D9PipelineStateViewer.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
     <ClCompile Include="$(IntDir)generated\moc_D3D11PipelineStateViewer.cpp">
@@ -1004,6 +1010,9 @@
     <ClInclude Include="$(IntDir)generated\ui_ComputeDebugSelector.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
+    <ClInclude Include="$(IntDir)generated\ui_D3D9PipelineStateViewer.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
     <ClInclude Include="$(IntDir)generated\ui_D3D11PipelineStateViewer.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
@@ -1241,6 +1250,9 @@
     <CustomBuild Include="Windows\TextureViewer.ui">
       <Filter>Windows</Filter>
     </CustomBuild>
+    <CustomBuild Include="Windows\PipelineState\D3D9PipelineStateViewer.ui">
+      <Filter>Windows\PipelineState</Filter>
+    </CustomBuild>
     <CustomBuild Include="Windows\PipelineState\D3D11PipelineStateViewer.ui">
       <Filter>Windows\PipelineState</Filter>
     </CustomBuild>
@@ -1398,6 +1410,9 @@
       <Filter>Windows\Dialogs</Filter>
     </CustomBuild>
     <CustomBuild Include="Windows\PipelineState\VulkanPipelineStateViewer.h">
+      <Filter>Windows\PipelineState</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Windows\PipelineState\D3D9PipelineStateViewer.h">
       <Filter>Windows\PipelineState</Filter>
     </CustomBuild>
     <CustomBuild Include="Windows\PipelineState\D3D11PipelineStateViewer.h">

@@ -36,6 +36,7 @@
 #include "Widgets/Extended/RDLabel.h"
 #include "Widgets/Extended/RDTreeWidget.h"
 #include "toolwindowmanager/ToolWindowManager.h"
+#include "D3D9PipelineStateViewer.h"
 #include "D3D11PipelineStateViewer.h"
 #include "D3D12PipelineStateViewer.h"
 #include "GLPipelineStateViewer.h"
@@ -198,6 +199,7 @@ PipelineStateViewer::PipelineStateViewer(ICaptureContext &ctx, QWidget *parent)
   // auto-fit and center scale
   m_TexDisplay.scale = -1.0f;
 
+  m_D3D9 = NULL;
   m_D3D11 = NULL;
   m_D3D12 = NULL;
   m_GL = NULL;
@@ -234,11 +236,7 @@ void PipelineStateViewer::OnCaptureLoaded()
   else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::Vulkan)
     setToVulkan();
   else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::D3D9)
-  {
-    // D3D9 doesn't have a dedicated pipeline state viewer yet.
-    // Skip output creation to avoid crashes since rendering helpers aren't implemented.
-    return;
-  }
+    setToD3D9();
 
   if(m_Current)
     m_Current->OnCaptureLoaded();
@@ -290,7 +288,7 @@ void PipelineStateViewer::OnEventChanged(uint32_t eventId)
   else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::Vulkan)
     setToVulkan();
   else if(m_Ctx.APIProps().pipelineType == GraphicsAPI::D3D9)
-    return;    // D3D9 pipeline state viewer not yet implemented
+    setToD3D9();
 
   if(m_Current)
     m_Current->OnEventChanged(eventId);
@@ -298,7 +296,9 @@ void PipelineStateViewer::OnEventChanged(uint32_t eventId)
 
 QString PipelineStateViewer::GetCurrentAPI()
 {
-  if(m_Current == m_D3D11)
+  if(m_Current == m_D3D9)
+    return lit("D3D9");
+  else if(m_Current == m_D3D11)
     return lit("D3D11");
   else if(m_Current == m_D3D12)
     return lit("D3D12");
@@ -323,7 +323,9 @@ void PipelineStateViewer::setPersistData(const QVariant &persistData)
 {
   QString str = persistData.toMap()[lit("type")].toString();
 
-  if(str == lit("D3D11"))
+  if(str == lit("D3D9"))
+    setToD3D9();
+  else if(str == lit("D3D11"))
     setToD3D11();
   else if(str == lit("D3D12"))
     setToD3D12();
@@ -335,17 +337,31 @@ void PipelineStateViewer::setPersistData(const QVariant &persistData)
 
 void PipelineStateViewer::reset()
 {
+  delete m_D3D9;
   delete m_D3D11;
   delete m_D3D12;
   delete m_GL;
   delete m_Vulkan;
 
+  m_D3D9 = NULL;
   m_D3D11 = NULL;
   m_D3D12 = NULL;
   m_GL = NULL;
   m_Vulkan = NULL;
 
   m_Current = NULL;
+}
+
+void PipelineStateViewer::setToD3D9()
+{
+  if(m_D3D9)
+    return;
+
+  reset();
+
+  m_D3D9 = new D3D9PipelineStateViewer(m_Ctx, *this, this);
+  ui->layout->addWidget(m_D3D9);
+  m_Current = m_D3D9;
 }
 
 void PipelineStateViewer::setToD3D11()
