@@ -23,7 +23,9 @@
  ******************************************************************************/
 
 #include "d3d9_replay.h"
+#include "maths/camera.h"
 #include "maths/formatpacking.h"
+#include "maths/matrix.h"
 #include "replay/dummy_driver.h"
 #include "serialise/rdcfile.h"
 #include "strings/string_utils.h"
@@ -48,11 +50,20 @@ D3D9Replay::~D3D9Replay()
     delete it->second;
   m_ShaderReflectionCache.clear();
 
+  delete m_FFPPixelReflection;
+  m_FFPPixelReflection = NULL;
+
   RenderDoc::Inst().UnregisterMemoryRegion(this);
 }
 
 void D3D9Replay::Shutdown()
 {
+  SAFE_RELEASE(m_Overlay.RenderTarget);
+  SAFE_RELEASE(m_Overlay.Texture);
+  m_Overlay.resourceId = ResourceId();
+  m_Overlay.width = 0;
+  m_Overlay.height = 0;
+
   for(auto it = m_OutputWindows.begin(); it != m_OutputWindows.end(); ++it)
   {
     SAFE_RELEASE(it->second.swap);
@@ -1181,6 +1192,47 @@ ShaderReflection *D3D9Replay::GetShaderReflection(ResourceId shaderId)
   return refl;
 }
 
+ShaderReflection *D3D9Replay::GetFFPPixelReflection()
+{
+  const D3D9RenderState &rs = m_pDevice->GetRenderState();
+
+  // Rebuild each time since bound textures can change per draw call.
+  // Free the previous one if it exists.
+  delete m_FFPPixelReflection;
+  m_FFPPixelReflection = new ShaderReflection;
+
+  ShaderReflection *refl = m_FFPPixelReflection;
+  refl->stage = ShaderStage::Pixel;
+  refl->entryPoint = "FFP";
+  refl->encoding = ShaderEncoding::Unknown;
+  refl->debugInfo.encoding = ShaderEncoding::Unknown;
+
+  // Create readOnlyResources and samplers entries for each bound texture stage
+  for(UINT i = 0; i < D3D9_MAX_TEXTURE_STAGES; i++)
+  {
+    if(rs.textures[i] != ResourceId())
+    {
+      ShaderResource res;
+      res.name = StringFormat::Fmt("TexStage%u", i);
+      res.fixedBindNumber = i;
+      res.isTexture = true;
+      res.hasSampler = true;
+      res.isReadOnly = true;
+      res.isInputAttachment = false;
+      res.descriptorType = DescriptorType::ImageSampler;
+      res.textureType = TextureType::Texture2D;    // default assumption for FFP
+      refl->readOnlyResources.push_back(res);
+
+      ShaderSampler sam;
+      sam.name = res.name;
+      sam.fixedBindNumber = i;
+      refl->samplers.push_back(sam);
+    }
+  }
+
+  return refl;
+}
+
 rdcarray<ShaderEntryPoint> D3D9Replay::GetShaderEntryPoints(ResourceId shader)
 {
   rdcarray<ShaderEntryPoint> ret;
@@ -1202,7 +1254,10 @@ rdcarray<ShaderEntryPoint> D3D9Replay::GetShaderEntryPoints(ResourceId shader)
 const ShaderReflection *D3D9Replay::GetShader(ResourceId pipeline, ResourceId shader,
                                               ShaderEntryPoint entry)
 {
-  return GetShaderReflection(shader);
+  ShaderReflection *refl = GetShaderReflection(shader);
+  if(!refl && shader == ResourceId() && entry.stage == ShaderStage::Pixel)
+    return GetFFPPixelReflection();
+  return refl;
 }
 
 rdcarray<rdcstr> D3D9Replay::GetDisassemblyTargets(bool withPipeline)
@@ -1320,7 +1375,10 @@ void D3D9Replay::SavePipelineState(uint32_t eventId)
 
   // Pixel shader
   m_PipeState.pixelShader.resourceId = rs.pixelShader;
-  m_PipeState.pixelShader.reflection = GetShaderReflection(rs.pixelShader);
+  if(rs.pixelShader != ResourceId())
+    m_PipeState.pixelShader.reflection = GetShaderReflection(rs.pixelShader);
+  else
+    m_PipeState.pixelShader.reflection = GetFFPPixelReflection();
 
   // PS constants
   m_PipeState.pixelShader.constants.floatConstants.resize(D3D9_MAX_PS_CONSTANTS_F * 4);
@@ -1603,6 +1661,39 @@ rdcarray<DescriptorAccess> D3D9Replay::GetDescriptorAccess(uint32_t eventId)
       acc.byteSize = D3D9_DESCRIPTOR_SIZE;
       acc.staticallyUnused = false;
       ret.push_back(acc);
+    }
+  }
+
+  // FFP texture stage bindings: emit descriptor accesses for texture stages
+  // that have a bound texture but weren't already covered by shader reflection.
+  // This is essential for FFP draw calls which have no pixel shader reflection.
+  {
+    // Track which sampler slots we've already emitted from shader reflection
+    rdcarray<bool> coveredSlots;
+    coveredSlots.resize(D3D9_TOTAL_SAMPLERS);
+    for(int i = 0; i < coveredSlots.count(); i++)
+      coveredSlots[i] = false;
+    for(int i = 0; i < ret.count(); i++)
+      if(ret[i].byteOffset < D3D9_TOTAL_SAMPLERS)
+        coveredSlots[ret[i].byteOffset] = true;
+
+    // D3D9 has up to 8 texture stages (D3D9_MAX_TEXTURE_STAGES = 8)
+    // which map to sampler slots 0..7
+    for(UINT i = 0; i < D3D9_MAX_TEXTURE_STAGES; i++)
+    {
+      if(rs.textures[i] != ResourceId() && !coveredSlots[i])
+      {
+        DescriptorAccess acc;
+        acc.stage = ShaderStage::Pixel;    // FFP textures bind at the pixel stage
+        acc.type = DescriptorType::ImageSampler;
+        acc.index = (uint16_t)ret.count();    // unique index
+        acc.arrayElement = 0;
+        acc.descriptorStore = descStore;
+        acc.byteOffset = i;    // sampler slot index
+        acc.byteSize = D3D9_DESCRIPTOR_SIZE;
+        acc.staticallyUnused = false;
+        ret.push_back(acc);
+      }
     }
   }
 
@@ -2078,14 +2169,21 @@ rdcarray<ShaderEncoding> D3D9Replay::GetTargetShaderEncodings()
 
 void D3D9Replay::ReplaceResource(ResourceId from, ResourceId to)
 {
+  m_pDevice->GetResourceManager()->ReplaceResource(from, to);
 }
 
 void D3D9Replay::RemoveReplacement(ResourceId id)
 {
+  m_pDevice->GetResourceManager()->RemoveReplacement(id);
 }
 
 void D3D9Replay::FreeTargetResource(ResourceId id)
 {
+  if(m_pDevice->GetResourceManager()->HasResource(id))
+  {
+    IUnknown *resource = m_pDevice->GetResourceManager()->GetResource(id);
+    SAFE_RELEASE(resource);
+  }
 }
 
 void D3D9Replay::ClearReplayCache()
@@ -2388,16 +2486,133 @@ void D3D9Replay::FlipOutputWindow(uint64_t id)
 bool D3D9Replay::GetMinMax(ResourceId texid, const Subresource &sub, CompType typeCast,
                            float *minval, float *maxval)
 {
-  // Not implemented
-  return false;
+  TextureDescription texDesc = GetTexture(texid);
+  if(texDesc.format.type == ResourceFormatType::Undefined)
+    return false;
+
+  // Get raw pixel data for the requested subresource
+  bytebuf data;
+  GetTextureDataParams params = {};
+  GetTextureData(texid, sub, params, data);
+  if(data.empty())
+    return false;
+
+  ResourceFormat fmt = texDesc.format;
+  // If typeCast is specified, override the component type
+  if(typeCast != CompType::Typeless)
+    fmt.compType = typeCast;
+
+  // For compressed formats (BC1/2/3), we can't easily iterate individual pixels
+  // on the CPU without decompression. Return false for now.
+  if(fmt.type != ResourceFormatType::Regular && fmt.type != ResourceFormatType::R5G6B5 &&
+     fmt.type != ResourceFormatType::D24S8)
+    return false;
+
+  uint32_t pixelStride = fmt.ElementSize();
+  if(pixelStride == 0)
+    return false;
+
+  uint32_t mipWidth = RDCMAX(1U, texDesc.width >> sub.mip);
+  uint32_t mipHeight = RDCMAX(1U, texDesc.height >> sub.mip);
+  uint32_t pixelCount = mipWidth * mipHeight;
+
+  if(data.size() < pixelCount * pixelStride)
+    pixelCount = (uint32_t)(data.size() / pixelStride);
+
+  if(pixelCount == 0)
+    return false;
+
+  // Initialize min/max to extreme values
+  float curMin[4] = {FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX};
+  float curMax[4] = {-FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX};
+
+  for(uint32_t i = 0; i < pixelCount; i++)
+  {
+    FloatVector v = DecodeFormattedComponents(fmt, data.data() + i * pixelStride);
+
+    curMin[0] = RDCMIN(curMin[0], v.x);
+    curMin[1] = RDCMIN(curMin[1], v.y);
+    curMin[2] = RDCMIN(curMin[2], v.z);
+    curMin[3] = RDCMIN(curMin[3], v.w);
+
+    curMax[0] = RDCMAX(curMax[0], v.x);
+    curMax[1] = RDCMAX(curMax[1], v.y);
+    curMax[2] = RDCMAX(curMax[2], v.z);
+    curMax[3] = RDCMAX(curMax[3], v.w);
+  }
+
+  memcpy(minval, curMin, sizeof(curMin));
+  memcpy(maxval, curMax, sizeof(curMax));
+
+  return true;
 }
 
 bool D3D9Replay::GetHistogram(ResourceId texid, const Subresource &sub, CompType typeCast,
                               float minval, float maxval, const rdcfixedarray<bool, 4> &channels,
                               rdcarray<uint32_t> &histogram)
 {
-  // Not implemented
-  return false;
+  if(minval >= maxval)
+    return false;
+
+  TextureDescription texDesc = GetTexture(texid);
+  if(texDesc.format.type == ResourceFormatType::Undefined)
+    return false;
+
+  bytebuf data;
+  GetTextureDataParams params = {};
+  GetTextureData(texid, sub, params, data);
+  if(data.empty())
+    return false;
+
+  ResourceFormat fmt = texDesc.format;
+  if(typeCast != CompType::Typeless)
+    fmt.compType = typeCast;
+
+  // Can't do compressed formats without decompression
+  if(fmt.type != ResourceFormatType::Regular && fmt.type != ResourceFormatType::R5G6B5 &&
+     fmt.type != ResourceFormatType::D24S8)
+    return false;
+
+  uint32_t pixelStride = fmt.ElementSize();
+  if(pixelStride == 0)
+    return false;
+
+  uint32_t mipWidth = RDCMAX(1U, texDesc.width >> sub.mip);
+  uint32_t mipHeight = RDCMAX(1U, texDesc.height >> sub.mip);
+  uint32_t pixelCount = mipWidth * mipHeight;
+
+  if(data.size() < pixelCount * pixelStride)
+    pixelCount = (uint32_t)(data.size() / pixelStride);
+
+  if(pixelCount == 0)
+    return false;
+
+  const int NUM_BUCKETS = 256;
+  histogram.resize(NUM_BUCKETS);
+  memset(histogram.data(), 0, sizeof(uint32_t) * NUM_BUCKETS);
+
+  // Add a small delta to maxval so that exactly-maxval values go in the last bucket
+  float maxWithDelta = maxval + maxval * 1e-6f;
+
+  for(uint32_t i = 0; i < pixelCount; i++)
+  {
+    FloatVector v = DecodeFormattedComponents(fmt, data.data() + i * pixelStride);
+
+    float vals[4] = {v.x, v.y, v.z, v.w};
+
+    for(int c = 0; c < 4; c++)
+    {
+      if(!channels[c])
+        continue;
+
+      float normalized = (vals[c] - minval) / (maxWithDelta - minval);
+      int bucket = (int)(normalized * NUM_BUCKETS);
+      bucket = RDCCLAMP(bucket, 0, NUM_BUCKETS - 1);
+      histogram[bucket]++;
+    }
+  }
+
+  return true;
 }
 
 void D3D9Replay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subresource &sub,
@@ -2441,6 +2656,260 @@ void D3D9Replay::SetProxyBufferData(ResourceId bufid, byte *data, size_t dataSiz
 void D3D9Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secondaryDraws,
                             const MeshDisplay &cfg)
 {
+  if(cfg.position.vertexResourceId == ResourceId() || cfg.position.numIndices == 0)
+    return;
+
+  IDirect3DDevice9 *dev = m_pDevice->GetReal();
+
+  // Save all device state
+  IDirect3DStateBlock9 *savedState = NULL;
+  dev->CreateStateBlock(D3DSBT_ALL, &savedState);
+
+  // Get view/projection matrices from the camera
+  float nearPlane = cfg.cam ? ((Camera *)cfg.cam)->GetNear() : 0.1f;
+  float farPlane = cfg.cam ? ((Camera *)cfg.cam)->GetFar() : 100000.0f;
+
+  // Get output window dimensions for aspect ratio from the currently bound render target
+  IDirect3DSurface9 *curRT = NULL;
+  dev->GetRenderTarget(0, &curRT);
+  float outputW = 1.0f, outputH = 1.0f;
+  if(curRT)
+  {
+    D3DSURFACE_DESC rtDesc;
+    curRT->GetDesc(&rtDesc);
+    outputW = (float)rtDesc.Width;
+    outputH = (float)rtDesc.Height;
+    curRT->Release();
+  }
+
+  Matrix4f projMat = Matrix4f::Perspective(90.0f, nearPlane, farPlane, outputW / outputH);
+  Matrix4f camMat = cfg.cam ? ((Camera *)cfg.cam)->GetMatrix() : Matrix4f::Identity();
+  Matrix4f axisMapMat = Matrix4f(cfg.axisMapping);
+
+  Matrix4f mvp = projMat.Mul(camMat.Mul(axisMapMat));
+
+  if(cfg.position.unproject)
+  {
+    Matrix4f guessProj =
+        cfg.position.farPlane != FLT_MAX
+            ? Matrix4f::Perspective(cfg.fov, cfg.position.nearPlane, cfg.position.farPlane,
+                                    cfg.aspect)
+            : Matrix4f::ReversePerspective(cfg.fov, cfg.position.nearPlane, cfg.aspect);
+
+    if(cfg.ortho)
+      guessProj = Matrix4f::Orthographic(cfg.position.nearPlane, cfg.position.farPlane);
+
+    if(cfg.position.flipY)
+      guessProj[5] *= -1.0f;
+
+    Matrix4f guessProjInv = guessProj.Inverse();
+    mvp = projMat.Mul(camMat.Mul(guessProjInv));
+  }
+
+  // Fetch vertex data
+  bytebuf vbData;
+  GetBufferData(cfg.position.vertexResourceId, 0, 0, vbData);
+  if(vbData.empty())
+  {
+    if(savedState)
+    {
+      savedState->Apply();
+      savedState->Release();
+    }
+    return;
+  }
+
+  // Fetch index data if indexed
+  bytebuf ibData;
+  bool indexed = (cfg.position.indexResourceId != ResourceId() && cfg.position.indexByteStride > 0);
+  if(indexed)
+    GetBufferData(cfg.position.indexResourceId, 0, 0, ibData);
+
+  // Build a vertex array with transformed positions.
+  // Read raw position data and transform through MVP on CPU,
+  // then emit pre-transformed (XYZRHW) vertices for D3D9 FFP drawing.
+  struct MeshVertex
+  {
+    float x, y, z, w;
+    DWORD color;
+  };
+
+  uint32_t numVerts = cfg.position.numIndices;
+  rdcarray<MeshVertex> verts;
+  verts.resize(numVerts);
+
+  const ResourceFormat &posFmt = cfg.position.format;
+  uint32_t posStride = cfg.position.vertexByteStride;
+  uint64_t posOffset = cfg.position.vertexByteOffset;
+
+  for(uint32_t i = 0; i < numVerts; i++)
+  {
+    uint32_t vertIdx = i;
+
+    // Look up actual vertex index if indexed
+    if(indexed && !ibData.empty())
+    {
+      uint64_t ibOff = cfg.position.indexByteOffset + (uint64_t)i * cfg.position.indexByteStride;
+      if(ibOff + cfg.position.indexByteStride <= ibData.size())
+      {
+        if(cfg.position.indexByteStride == 2)
+          vertIdx = *(uint16_t *)(ibData.data() + ibOff);
+        else
+          vertIdx = *(uint32_t *)(ibData.data() + ibOff);
+
+        vertIdx += cfg.position.baseVertex;
+      }
+    }
+
+    // Read position from vertex buffer
+    uint64_t vbOff = posOffset + (uint64_t)vertIdx * posStride;
+    float pos[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+
+    if(vbOff + posFmt.ElementSize() <= vbData.size())
+    {
+      FloatVector decoded = DecodeFormattedComponents(posFmt, vbData.data() + vbOff);
+      pos[0] = decoded.x;
+      pos[1] = decoded.y;
+      pos[2] = decoded.z;
+      if(posFmt.compCount >= 4)
+        pos[3] = decoded.w;
+    }
+
+    // Transform through MVP
+    float out[4];
+    out[0] = mvp[0] * pos[0] + mvp[4] * pos[1] + mvp[8] * pos[2] + mvp[12] * pos[3];
+    out[1] = mvp[1] * pos[0] + mvp[5] * pos[1] + mvp[9] * pos[2] + mvp[13] * pos[3];
+    out[2] = mvp[2] * pos[0] + mvp[6] * pos[1] + mvp[10] * pos[2] + mvp[14] * pos[3];
+    out[3] = mvp[3] * pos[0] + mvp[7] * pos[1] + mvp[11] * pos[2] + mvp[15] * pos[3];
+
+    // Convert from clip space to D3D9 screen space (pre-transformed)
+    float invW = (out[3] != 0.0f) ? (1.0f / out[3]) : 1.0f;
+    float sx = (out[0] * invW * 0.5f + 0.5f) * outputW;
+    float sy = (1.0f - (out[1] * invW * 0.5f + 0.5f)) * outputH;
+    float sz = out[2] * invW;
+
+    verts[i].x = sx - 0.5f;
+    verts[i].y = sy - 0.5f;
+    verts[i].z = sz;
+    verts[i].w = 1.0f;
+    verts[i].color = 0xFFE0E000;    // yellowish for solid
+  }
+
+  // Set up FFP render state
+  dev->SetVertexShader(NULL);
+  dev->SetPixelShader(NULL);
+  dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+  dev->SetTexture(0, NULL);
+
+  dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+  dev->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
+  dev->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
+  dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+  dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+  dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+  dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
+  dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+  dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+  dev->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+  dev->SetRenderState(D3DRS_SRGBWRITEENABLE, 0);
+  dev->SetRenderState(D3DRS_COLORWRITEENABLE,
+                      D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+                          D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
+
+  dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+  dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+  dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+  dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+  dev->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+
+  // Map RenderDoc topology to D3D9 primitive type
+  D3DPRIMITIVETYPE primType = D3DPT_TRIANGLELIST;
+  uint32_t primCount = 0;
+  switch(cfg.position.topology)
+  {
+    case Topology::PointList:
+      primType = D3DPT_POINTLIST;
+      primCount = numVerts;
+      break;
+    case Topology::LineList:
+      primType = D3DPT_LINELIST;
+      primCount = numVerts / 2;
+      break;
+    case Topology::LineStrip:
+      primType = D3DPT_LINESTRIP;
+      primCount = numVerts > 1 ? numVerts - 1 : 0;
+      break;
+    case Topology::TriangleList:
+      primType = D3DPT_TRIANGLELIST;
+      primCount = numVerts / 3;
+      break;
+    case Topology::TriangleStrip:
+      primType = D3DPT_TRIANGLESTRIP;
+      primCount = numVerts > 2 ? numVerts - 2 : 0;
+      break;
+    case Topology::TriangleFan:
+      primType = D3DPT_TRIANGLEFAN;
+      primCount = numVerts > 2 ? numVerts - 2 : 0;
+      break;
+    default:
+      primType = D3DPT_TRIANGLELIST;
+      primCount = numVerts / 3;
+      break;
+  }
+
+  if(primCount == 0 || verts.empty())
+  {
+    if(savedState)
+    {
+      savedState->Apply();
+      savedState->Release();
+    }
+    return;
+  }
+
+  // Draw solid if requested
+  if(cfg.visualisationMode != Visualisation::NoSolid &&
+     (primType == D3DPT_TRIANGLELIST || primType == D3DPT_TRIANGLESTRIP ||
+      primType == D3DPT_TRIANGLEFAN))
+  {
+    dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+    dev->DrawPrimitiveUP(primType, primCount, verts.data(), sizeof(MeshVertex));
+  }
+
+  // Draw wireframe overlay
+  if(cfg.wireframeDraw && primCount > 0 &&
+     (primType == D3DPT_TRIANGLELIST || primType == D3DPT_TRIANGLESTRIP ||
+      primType == D3DPT_TRIANGLEFAN))
+  {
+    // Set wireframe color (green)
+    for(uint32_t i = 0; i < numVerts; i++)
+      verts[i].color = 0xFF00FF00;
+
+    dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_WIREFRAME);
+    // Bias depth slightly so wireframe draws on top of solid
+    const float depthBias = -0.00001f;
+    dev->SetRenderState(D3DRS_DEPTHBIAS, *(DWORD *)&depthBias);
+    dev->DrawPrimitiveUP(primType, primCount, verts.data(), sizeof(MeshVertex));
+    const float zero = 0.0f;
+    dev->SetRenderState(D3DRS_DEPTHBIAS, *(DWORD *)&zero);
+  }
+  else if(primType == D3DPT_LINELIST || primType == D3DPT_LINESTRIP ||
+          primType == D3DPT_POINTLIST)
+  {
+    // For line/point primitives, just draw them directly
+    for(uint32_t i = 0; i < numVerts; i++)
+      verts[i].color = 0xFF00FF00;
+
+    dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_WIREFRAME);
+    dev->DrawPrimitiveUP(primType, primCount, verts.data(), sizeof(MeshVertex));
+  }
+
+  // Restore state
+  if(savedState)
+  {
+    savedState->Apply();
+    savedState->Release();
+  }
 }
 
 bool D3D9Replay::RenderTexture(TextureDisplay cfg)
@@ -2609,6 +3078,109 @@ void D3D9Replay::RenderCheckerboard(FloatVector dark, FloatVector light)
 
 void D3D9Replay::RenderHighlightBox(float w, float h, float scale)
 {
+  IDirect3DDevice9 *dev = m_pDevice->GetReal();
+
+  // Save state block
+  IDirect3DStateBlock9 *savedState = NULL;
+  dev->CreateStateBlock(D3DSBT_ALL, &savedState);
+
+  // Set up fixed-function render state for drawing colored quads
+  dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+  dev->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+  dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+  dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+  dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+  dev->SetRenderState(D3DRS_SCISSORTESTENABLE, TRUE);
+  dev->SetRenderState(D3DRS_COLORWRITEENABLE,
+                      D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+                          D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
+  dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
+  dev->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+  dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG2);
+  dev->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+  dev->SetTexture(0, NULL);
+  dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+  dev->SetVertexShader(NULL);
+  dev->SetPixelShader(NULL);
+
+  // Pre-transformed vertex: covers the entire viewport as a fullscreen quad
+  // Using a triangle strip with 4 vertices
+  // x, y, z, rhw — z=0, rhw=1 for pre-transformed
+  struct HighlightVtx
+  {
+    float x, y, z, rhw;
+    DWORD color;
+  };
+
+  // Full-viewport quad vertices (will be scissor-clipped to the border rects)
+  auto DrawFullscreenQuad = [&](DWORD color) {
+    HighlightVtx verts[4] = {
+        {0.0f, 0.0f, 0.0f, 1.0f, color},
+        {w, 0.0f, 0.0f, 1.0f, color},
+        {0.0f, h, 0.0f, 1.0f, color},
+        {w, h, 0.0f, 1.0f, color},
+    };
+    dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, verts, sizeof(HighlightVtx));
+  };
+
+  // The highlight box occupies the center of the viewport.
+  // Same math as D3D11: top-left at (w/2, h/2), size = scale pixels.
+  LONG sz = LONG(scale);
+  LONG tlx = LONG(w / 2.0f + 0.5f);
+  LONG tly = LONG(h / 2.0f + 0.5f);
+
+  // 4 border rects: left, right, top, bottom (same order as D3D11)
+  RECT rect[4] = {
+      {tlx, tly, tlx + 1, tly + sz},          // left border
+      {tlx + sz, tly, tlx + sz + 1, tly + sz + 1},  // right border
+      {tlx, tly, tlx + sz, tly + 1},           // top border
+      {tlx, tly + sz, tlx + sz, tly + sz + 1},  // bottom border
+  };
+
+  // Draw white inner border
+  for(int i = 0; i < 4; i++)
+  {
+    dev->SetScissorRect(&rect[i]);
+    DrawFullscreenQuad(0xFFFFFFFF);
+  }
+
+  // Expand rects outward by 1px for the black outer border (matching D3D11 logic)
+  rect[0].left--;
+  rect[0].right--;
+  rect[1].left++;
+  rect[1].right++;
+  rect[2].left--;
+  rect[2].right--;
+  rect[3].left--;
+  rect[3].right--;
+
+  rect[0].top--;
+  rect[0].bottom--;
+  rect[1].top--;
+  rect[1].bottom--;
+  rect[2].top--;
+  rect[2].bottom--;
+  rect[3].top++;
+  rect[3].bottom++;
+
+  rect[0].bottom += 2;
+  rect[1].bottom += 2;
+  rect[2].right += 2;
+  rect[3].right += 2;
+
+  // Draw black outer border
+  for(int i = 0; i < 4; i++)
+  {
+    dev->SetScissorRect(&rect[i]);
+    DrawFullscreenQuad(0xFF000000);
+  }
+
+  // Restore render state
+  if(savedState)
+  {
+    savedState->Apply();
+    savedState->Release();
+  }
 }
 
 uint32_t D3D9Replay::PickVertex(uint32_t eventId, int32_t width, int32_t height,
