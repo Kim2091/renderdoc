@@ -17,10 +17,29 @@ jobs:
       with:
         fetch-depth: 5
 
+    - name: Cache 3rdparty extras
+      id: cache-3rdparty
+      uses: actions/cache@v4
+      with:
+        path: |
+          3rdparty
+          PySide2
+        key: renderdoc-3rdparty-v1
+
     - name: Download optional 3rdparty extras
+      if: steps.cache-3rdparty.outputs.cache-hit != 'true'
       run: |
         curl https://renderdoc.org/qrenderdoc_3rdparty.zip -O
         7z x qrenderdoc_3rdparty.zip
+        rm -f qrenderdoc_3rdparty.zip
+
+    - name: Cache build objects
+      uses: actions/cache@v4
+      with:
+        path: x64/Release/obj
+        key: msbuild-release-x64-${{ hashFiles('renderdoc/**/*.cpp', 'renderdoc/**/*.h', 'qrenderdoc/**/*.cpp', 'qrenderdoc/**/*.h') }}
+        restore-keys: |
+          msbuild-release-x64-
 
     - name: Set up Visual Studio tools
       uses: microsoft/setup-msbuild@v2
