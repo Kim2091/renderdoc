@@ -73,6 +73,10 @@ private:
   void setState();
   void clearState();
 
+  void setShaderState(const D3D9Pipe::Shader &stage, RDLabel *shader, RDTreeWidget *resources,
+                      RDTreeWidget *samplers, RDTreeWidget *cbuffers,
+                      const rdcarray<D3D9Pipe::TextureStage> &texStages);
+
   bool showNode(bool usedSlot, bool filledSlot);
   void setInactiveRow(RDTreeWidgetItem *node);
   void setEmptyRow(RDTreeWidgetItem *node);
