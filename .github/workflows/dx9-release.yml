@@ -67,6 +67,9 @@ jobs:
         cp x64/Release/pymodules/*.pyd package/RenderDoc_DX9/pymodules/
         cp -r x64/Release/plugins package/RenderDoc_DX9/plugins 2>/dev/null || true
         cp -r x64/Release/qtplugins package/RenderDoc_DX9/qtplugins 2>/dev/null || true
+        cp -r x64/Release/PySide2 package/RenderDoc_DX9/PySide2 2>/dev/null || true
+        cp x64/Release/libcrypto-1_1-x64.dll package/RenderDoc_DX9/ 2>/dev/null || true
+        cp x64/Release/libssl-1_1-x64.dll package/RenderDoc_DX9/ 2>/dev/null || true
         cd package && 7z a -tzip ../RenderDoc_DX9_Windows_x64.zip RenderDoc_DX9/
 
     - name: Upload to release
