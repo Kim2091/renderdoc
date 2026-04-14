@@ -207,6 +207,7 @@ public:
 
 private:
   ShaderReflection *GetShaderReflection(ResourceId shaderId);
+  ShaderReflection *GetFFPPixelReflection();
   ShaderReflection *BuildShaderReflection(ResourceId shaderId, const rdcarray<DWORD> &bytecode,
                                           ShaderStage stage);
 
@@ -222,6 +223,18 @@ private:
 
   // Cached shader reflections, keyed by shader ResourceId
   std::map<ResourceId, ShaderReflection *> m_ShaderReflectionCache;
+  ShaderReflection *m_FFPPixelReflection = NULL;
+
+  struct OverlayResource
+  {
+    IDirect3DTexture9 *Texture = NULL;
+    IDirect3DSurface9 *RenderTarget = NULL;
+    ResourceId resourceId;
+    uint32_t width = 0;
+    uint32_t height = 0;
+  };
+
+  OverlayResource m_Overlay;
 
   FrameRecord m_FrameRecord;
 
